@@ -109,6 +109,69 @@ const P = derivePublicKey(publicKeyBase, state);
 const witnessProgram = p2trXonly(P);
 ```
 
+## CLI
+
+```bash
+# Install globally
+npm install -g blocktrails
+
+# Initialize a new trail
+blocktrails init
+
+# Create states (off-chain)
+blocktrails genesis '{"balance": 1000}'
+blocktrails advance '{"balance": 900}'
+
+# Fund and spend (on-chain)
+blocktrails fund --broadcast           # base → GENESIS
+blocktrails spend --broadcast          # GENESIS → State 1
+blocktrails spend '{"balance": 800}' -b  # advance to new state
+
+# View trail with on-chain status
+blocktrails show --online
+```
+
+### CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `init` | Create new trail (generates key or uses `git config nostr.privkey`) |
+| `genesis <state>` | Create genesis state (off-chain) |
+| `advance <state>` | Advance to new state (off-chain) |
+| `fund` | Move funds from base address to GENESIS (on-chain) |
+| `spend [state]` | Advance on-chain (to next state, or new state if provided) |
+| `show` | Show trail status (add `--online` for on-chain status) |
+| `export` | Export trail with witness programs |
+| `verify [file]` | Verify a trail |
+
+## Transaction API
+
+```javascript
+import {
+  buildTransaction,
+  signTransaction,
+  serializeTransaction,
+  broadcast,
+  getUtxos,
+  getFeeRates
+} from 'blocktrails';
+
+// Fetch UTXOs and fee rate
+const utxos = await getUtxos(address, 'tbtc4');
+const { halfHour } = await getFeeRates('tbtc4');
+
+// Build and sign P2TR transaction
+const tx = buildTransaction({
+  inputs: utxos.map(u => ({ ...u, witnessProgram })),
+  outputs: [{ witnessProgram: newWP, value: amount }]
+});
+const signed = signTransaction(tx, [signingKey], utxos);
+const txHex = bytesToHex(serializeTransaction(signed));
+
+// Broadcast
+const txid = await broadcast(txHex, 'tbtc4');
+```
+
 ## Run Demo
 
 ```bash
@@ -120,7 +183,7 @@ Or try the [live interactive demo](https://blocktrails.org/demo/) on testnet4.
 ## Run Tests
 
 ```bash
-npm test
+npm test  # 91 tests
 ```
 
 ## Specification

@@ -411,3 +411,27 @@ function encodeBech32m(hrp, witnessProgram) {
 
 // Re-export utilities
 export { bytesToHex, hexToBytes };
+
+// Re-export transaction module
+export {
+  signSchnorr,
+  verifySchnorr,
+  buildTransaction,
+  signTransaction,
+  serializeTransaction,
+  computeTxid,
+  computeTapSighash,
+  createP2TRScript,
+  estimateVsize,
+  taggedHash
+} from './transaction.js';
+
+// Re-export broadcast module
+export {
+  getUtxos,
+  broadcast,
+  getFeeRates,
+  getTransaction,
+  getAddressTxs,
+  waitForConfirmation
+} from './broadcast.js';

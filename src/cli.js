@@ -9,7 +9,24 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
-import { Blocktrail, verify, p2trXonly, deriveChainedPublicKey, scalar } from './index.js';
+import {
+  Blocktrail,
+  verify,
+  p2trXonly,
+  deriveChainedPublicKey,
+  deriveChainedPrivateKey,
+  scalar,
+  buildTransaction,
+  signTransaction,
+  serializeTransaction,
+  computeTxid,
+  createP2TRScript,
+  estimateVsize,
+  getUtxos,
+  getAddressTxs,
+  broadcast as broadcastTx,
+  getFeeRates
+} from './index.js';
 
 const DEFAULT_FILE = '.blocktrail.json';
 
@@ -264,7 +281,7 @@ function cmdAdvance(state, options) {
   console.log(`Saved: ${path}`);
 }
 
-function cmdShow(options) {
+async function cmdShow(options) {
   const trail = loadTrail(options);
 
   if (!trail) {
@@ -272,13 +289,39 @@ function cmdShow(options) {
     process.exit(1);
   }
 
-  const hrp = getHrp(trail.network || 'tbtc4');
+  const network = trail.network || 'tbtc4';
+  const hrp = getHrp(network);
   const publicKeyBase = hexToBytes(trail.publicKeyBase);
 
   console.log(`Trail: ${getTrailPath(options)}`);
-  console.log(`Network: ${trail.network || 'tbtc4'}`);
+  console.log(`Network: ${network}`);
   console.log(`Public key: ${trail.publicKeyBase}`);
   console.log(`States: ${trail.states.length}`);
+  console.log('');
+
+  // Show base key address
+  const baseWP = p2trXonly(publicKeyBase);
+  const baseAddress = encodeBech32m(hrp, baseWP);
+  console.log(`Base address: ${baseAddress}`);
+
+  if (options.online) {
+    try {
+      const [baseUtxos, baseTxs] = await Promise.all([
+        getUtxos(baseAddress, network),
+        getAddressTxs(baseAddress, network)
+      ]);
+      if (baseTxs.length === 0) {
+        console.log(`Base status: never funded`);
+      } else if (baseUtxos.length === 0) {
+        console.log(`Base status: SPENT (${baseTxs.length} tx)`);
+      } else {
+        const total = baseUtxos.reduce((s, u) => s + u.amount, 0);
+        console.log(`Base status: ${total} sats (${baseUtxos.length} UTXO, ${baseTxs.length} tx)`);
+      }
+    } catch (e) {
+      console.log(`Base status: (error fetching)`);
+    }
+  }
   console.log('');
 
   if (trail.states.length === 0) {
@@ -286,7 +329,8 @@ function cmdShow(options) {
     return;
   }
 
-  // Show each state with its address
+  // Collect addresses first
+  const addresses = [];
   let P = secp.ProjectivePoint.fromHex(publicKeyBase);
 
   for (let i = 0; i < trail.states.length; i++) {
@@ -297,14 +341,57 @@ function cmdShow(options) {
 
     const wp = p2trXonly(P.toRawBytes(true));
     const address = encodeBech32m(hrp, wp);
+    addresses.push({ state, address, index: i });
+  }
 
-    const label = i === 0 ? 'GENESIS' : i === trail.states.length - 1 ? 'HEAD' : `State ${i}`;
+  // Fetch on-chain status if --online flag
+  let statusMap = new Map();
+  if (options.online) {
+    console.log('Fetching on-chain status...');
+    console.log('');
+    for (const { address, index } of addresses) {
+      try {
+        const [utxos, txs] = await Promise.all([
+          getUtxos(address, network),
+          getAddressTxs(address, network)
+        ]);
+        statusMap.set(index, { utxos, txs });
+      } catch (e) {
+        statusMap.set(index, null); // Error fetching
+      }
+    }
+  }
+
+  // Display states
+  for (let i = 0; i < addresses.length; i++) {
+    const { state, address } = addresses[i];
+    const label = i === 0 ? 'GENESIS' : i === addresses.length - 1 ? 'HEAD' : `State ${i}`;
     const statePreview = state.length > 50 ? state.slice(0, 47) + '...' : state;
 
     console.log(`[${i}] ${label}`);
     console.log(`    State: ${statePreview}`);
     console.log(`    Address: ${address}`);
-    if (i < trail.states.length - 1) console.log('    ↓');
+
+    // Show on-chain status if available
+    if (options.online) {
+      const status = statusMap.get(i);
+      if (status === null) {
+        console.log(`    Status: (error fetching)`);
+      } else {
+        const { utxos, txs } = status;
+        if (txs.length === 0) {
+          console.log(`    Status: never funded`);
+        } else if (utxos.length === 0) {
+          console.log(`    Status: SPENT (${txs.length} tx)`);
+        } else {
+          const total = utxos.reduce((s, u) => s + u.amount, 0);
+          const confirmed = utxos.filter(u => u.confirmed).length;
+          console.log(`    Status: ${total} sats (${utxos.length} UTXO, ${confirmed} confirmed, ${txs.length} tx)`);
+        }
+      }
+    }
+
+    if (i < addresses.length - 1) console.log('    ↓');
   }
 }
 
@@ -404,12 +491,332 @@ function cmdVerify(file, options) {
   }
 }
 
+async function cmdFund(options) {
+  // Load trail
+  const trail = loadTrail(options);
+  if (!trail || trail.states.length === 0) {
+    console.error('No trail found. Run "genesis" first to create a state.');
+    process.exit(1);
+  }
+
+  // Get private key
+  const privateKey = getPrivateKey(options);
+  if (!privateKey) {
+    console.error('No private key found. Use --key or set git config nostr.privkey');
+    process.exit(1);
+  }
+
+  // Verify private key matches trail
+  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+    console.error('Private key does not match trail public key');
+    process.exit(1);
+  }
+
+  const network = trail.network || 'tbtc4';
+  const hrp = getHrp(network);
+  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+
+  // Base address (untweaked)
+  const baseWP = p2trXonly(publicKeyBase);
+  const baseAddress = encodeBech32m(hrp, baseWP);
+
+  // GENESIS address (first state)
+  const genesisP = deriveChainedPublicKey(publicKeyBase, [trail.states[0]]);
+  const genesisWP = p2trXonly(genesisP);
+  const genesisAddress = encodeBech32m(hrp, genesisWP);
+
+  console.log(`Base address: ${baseAddress}`);
+  console.log(`GENESIS address: ${genesisAddress}`);
+
+  // Fetch UTXOs from base
+  console.log('');
+  console.log('Fetching UTXOs from base...');
+  let utxos;
+  try {
+    utxos = await getUtxos(baseAddress, network);
+    if (utxos.length === 0) {
+      console.error('No UTXOs at base address.');
+      console.error(`Send funds to: ${baseAddress}`);
+      process.exit(1);
+    }
+    utxos = utxos.map(u => ({ ...u, witnessProgram: baseWP }));
+    console.log(`Found ${utxos.length} UTXO(s), total: ${utxos.reduce((s, u) => s + u.amount, 0)} sats`);
+  } catch (e) {
+    console.error(`Failed to fetch UTXOs: ${e.message}`);
+    process.exit(1);
+  }
+
+  // Calculate fee
+  let feeRate = options.feeRate;
+  if (!feeRate) {
+    try {
+      const rates = await getFeeRates(network);
+      feeRate = rates.halfHour;
+      console.log(`Using fee rate: ${feeRate} sat/vB`);
+    } catch {
+      feeRate = 1;
+      console.log(`Using default fee rate: ${feeRate} sat/vB`);
+    }
+  }
+
+  const vsize = estimateVsize(utxos.length, 1);
+  const fee = Math.ceil(vsize * feeRate);
+  const totalIn = utxos.reduce((sum, u) => sum + u.amount, 0);
+  const outputAmount = totalIn - fee;
+
+  if (outputAmount <= 546) {
+    console.error(`Insufficient funds: ${totalIn} sats, fee ${fee} sats`);
+    process.exit(1);
+  }
+
+  // Build transaction: base → GENESIS
+  const tx = buildTransaction({
+    inputs: utxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      amount: u.amount,
+      witnessProgram: u.witnessProgram
+    })),
+    outputs: [{
+      witnessProgram: genesisWP,
+      value: outputAmount
+    }]
+  });
+
+  // Sign with BASE key (not derived)
+  const signingKeys = utxos.map(() => hexToBytes(privateKey));
+  const signedTx = signTransaction(tx, signingKeys, utxos);
+
+  // Serialize
+  const txBytes = serializeTransaction(signedTx);
+  const txHex = bytesToHex(txBytes);
+  const txid = computeTxid(signedTx);
+
+  console.log('');
+  console.log('Transaction built (base → GENESIS):');
+  console.log(`  TXID: ${txid}`);
+  console.log(`  Fee: ${fee} sats (${feeRate} sat/vB)`);
+  console.log(`  Output: ${outputAmount} sats → GENESIS`);
+
+  if (options.showRaw) {
+    console.log('');
+    console.log('Raw transaction:');
+    console.log(txHex);
+  }
+
+  // Broadcast if requested
+  if (options.broadcast) {
+    console.log('');
+    console.log('Broadcasting...');
+    try {
+      const broadcastTxid = await broadcastTx(txHex, network);
+      console.log(`✓ Broadcast successful!`);
+      console.log(`  TXID: ${broadcastTxid}`);
+    } catch (e) {
+      console.error(`✗ Broadcast failed: ${e.message}`);
+      process.exit(1);
+    }
+  } else {
+    console.log('');
+    console.log('Dry run. Use --broadcast to send.');
+  }
+}
+
+async function cmdSpend(newState, options) {
+  // Load trail
+  const trail = loadTrail(options);
+  if (!trail || trail.states.length === 0) {
+    console.error('No trail found. Run "genesis" first.');
+    process.exit(1);
+  }
+
+  // Get private key
+  const privateKey = getPrivateKey(options);
+  if (!privateKey) {
+    console.error('No private key found. Use --key or set git config nostr.privkey');
+    process.exit(1);
+  }
+
+  // Verify private key matches trail
+  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+    console.error('Private key does not match trail public key');
+    process.exit(1);
+  }
+
+  const network = trail.network || 'tbtc4';
+  const hrp = getHrp(network);
+  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+
+  // Build list of all state addresses
+  const stateAddresses = [];
+  for (let i = 0; i < trail.states.length; i++) {
+    const statesUpTo = trail.states.slice(0, i + 1);
+    const P = deriveChainedPublicKey(publicKeyBase, statesUpTo);
+    const wp = p2trXonly(P);
+    const address = encodeBech32m(hrp, wp);
+    stateAddresses.push({ index: i, states: statesUpTo, wp, address });
+  }
+
+  // Find which address has UTXOs
+  console.log('Scanning for UTXOs...');
+  let sourceIndex = -1;
+  let utxos = [];
+
+  for (let i = 0; i < stateAddresses.length; i++) {
+    const { address, index } = stateAddresses[i];
+    try {
+      const found = await getUtxos(address, network);
+      if (found.length > 0) {
+        sourceIndex = index;
+        utxos = found.map(u => ({ ...u, witnessProgram: stateAddresses[i].wp }));
+        const label = index === 0 ? 'GENESIS' : index === trail.states.length - 1 ? 'HEAD' : `State ${index}`;
+        console.log(`Found ${utxos.length} UTXO(s) at [${index}] ${label}: ${utxos.reduce((s, u) => s + u.amount, 0)} sats`);
+        break;
+      }
+    } catch (e) {
+      console.error(`Error checking state ${i}: ${e.message}`);
+    }
+  }
+
+  if (sourceIndex === -1) {
+    console.error('No UTXOs found at any state address.');
+    console.error('Run "fund" first to move funds from base → GENESIS.');
+    process.exit(1);
+  }
+
+  // Determine destination
+  let destIndex;
+  let destStates;
+  let addNewState = false;
+
+  if (newState) {
+    // Adding new state - must be at HEAD
+    if (sourceIndex !== trail.states.length - 1) {
+      console.error(`Cannot add new state: funds are at state ${sourceIndex}, not HEAD (${trail.states.length - 1}).`);
+      console.error('Run "spend" without arguments to advance to HEAD first.');
+      process.exit(1);
+    }
+    destStates = [...trail.states, newState];
+    destIndex = trail.states.length;
+    addNewState = true;
+  } else {
+    // Advancing to next existing state
+    if (sourceIndex >= trail.states.length - 1) {
+      console.error('Already at HEAD. Provide a new state to advance further.');
+      console.error('Usage: blocktrails spend <new-state>');
+      process.exit(1);
+    }
+    destIndex = sourceIndex + 1;
+    destStates = trail.states.slice(0, destIndex + 1);
+  }
+
+  const destP = deriveChainedPublicKey(publicKeyBase, destStates);
+  const destWP = p2trXonly(destP);
+  const destAddress = encodeBech32m(hrp, destWP);
+  const destLabel = addNewState ? 'NEW' : (destIndex === 0 ? 'GENESIS' : destIndex === trail.states.length - 1 ? 'HEAD' : `State ${destIndex}`);
+
+  console.log(`Destination: [${destIndex}] ${destLabel} → ${destAddress}`);
+
+  // Calculate fee
+  let feeRate = options.feeRate;
+  if (!feeRate) {
+    try {
+      const rates = await getFeeRates(network);
+      feeRate = rates.halfHour;
+      console.log(`Using fee rate: ${feeRate} sat/vB`);
+    } catch {
+      feeRate = 1;
+      console.log(`Using default fee rate: ${feeRate} sat/vB`);
+    }
+  }
+
+  const vsize = estimateVsize(utxos.length, 1);
+  const fee = Math.ceil(vsize * feeRate);
+  const totalIn = utxos.reduce((sum, u) => sum + u.amount, 0);
+  const outputAmount = totalIn - fee;
+
+  if (outputAmount <= 546) {
+    console.error(`Insufficient funds: ${totalIn} sats, fee ${fee} sats`);
+    process.exit(1);
+  }
+
+  // Get signing key for source state
+  const sourceStates = trail.states.slice(0, sourceIndex + 1);
+  const signingKey = deriveChainedPrivateKey(hexToBytes(privateKey), sourceStates);
+
+  // Build transaction
+  const tx = buildTransaction({
+    inputs: utxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      amount: u.amount,
+      witnessProgram: u.witnessProgram
+    })),
+    outputs: [{
+      witnessProgram: destWP,
+      value: outputAmount
+    }]
+  });
+
+  // Sign transaction
+  const signingKeys = utxos.map(() => signingKey);
+  const signedTx = signTransaction(tx, signingKeys, utxos);
+
+  // Serialize
+  const txBytes = serializeTransaction(signedTx);
+  const txHex = bytesToHex(txBytes);
+  const txid = computeTxid(signedTx);
+
+  console.log('');
+  console.log(`Transaction: [${sourceIndex}] → [${destIndex}] ${destLabel}`);
+  console.log(`  TXID: ${txid}`);
+  console.log(`  Fee: ${fee} sats (${feeRate} sat/vB)`);
+  console.log(`  Output: ${outputAmount} sats → ${destAddress}`);
+  if (addNewState) {
+    const statePreview = newState.length > 40 ? newState.slice(0, 37) + '...' : newState;
+    console.log(`  New state: ${statePreview}`);
+  }
+
+  if (options.showRaw) {
+    console.log('');
+    console.log('Raw transaction:');
+    console.log(txHex);
+  }
+
+  // Broadcast if requested
+  if (options.broadcast) {
+    console.log('');
+    console.log('Broadcasting...');
+    try {
+      const broadcastTxid = await broadcastTx(txHex, network);
+      console.log(`✓ Broadcast successful!`);
+      console.log(`  TXID: ${broadcastTxid}`);
+
+      // Update trail file only if adding new state
+      if (addNewState) {
+        trail.states.push(newState);
+        const path = getTrailPath(options);
+        writeFileSync(path, JSON.stringify(trail, null, 2) + '\n');
+        console.log(`  Trail updated: ${path}`);
+      }
+    } catch (e) {
+      console.error(`✗ Broadcast failed: ${e.message}`);
+      process.exit(1);
+    }
+  } else {
+    console.log('');
+    console.log('Dry run complete. Use --broadcast to send transaction.');
+  }
+}
+
 // ============================================
 // Argument Parsing
 // ============================================
 
 function parseArgs(args) {
-  const options = {};
+  const options = { utxo: [] };
   const positional = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -429,6 +836,16 @@ function parseArgs(args) {
       options.help = true;
     } else if (arg === '--version' || arg === '-v') {
       options.version = true;
+    } else if (arg === '--utxo' || arg === '-u') {
+      options.utxo.push(args[++i]);
+    } else if (arg === '--fee-rate' || arg === '--fee') {
+      options.feeRate = parseFloat(args[++i]);
+    } else if (arg === '--broadcast' || arg === '-b') {
+      options.broadcast = true;
+    } else if (arg === '--raw' || arg === '-r') {
+      options.showRaw = true;
+    } else if (arg === '--online') {
+      options.online = true;
     } else if (!arg.startsWith('-')) {
       positional.push(arg);
     }
@@ -446,9 +863,11 @@ Usage:
 
 Commands:
   init                    Create new trail (uses git config nostr.privkey if available)
-  genesis <state>         Create genesis state
-  advance <state>         Advance to new state
-  show                    Show current trail status
+  genesis <state>         Create genesis state (off-chain)
+  advance <state>         Advance to new state (off-chain)
+  fund                    Move funds from base address to GENESIS (on-chain)
+  spend [state]           Advance on-chain (to next state, or new state if provided)
+  show                    Show trail status (add --online for on-chain status)
   export                  Export trail with witness programs
   verify [file]           Verify a trail
 
@@ -461,6 +880,12 @@ Options:
   -h, --help              Show this help
   -v, --version           Show version
 
+Spend Options:
+  -u, --utxo <txid:vout:amount>   UTXO to spend (repeatable, or auto-fetch)
+  --fee-rate <sat/vB>             Fee rate (default: auto-fetch)
+  -b, --broadcast                 Broadcast transaction
+  -r, --raw                       Show raw transaction hex
+
 Key Sources (in priority order):
   1. --key flag
   2. git config nostr.privkey
@@ -470,7 +895,10 @@ Examples:
   blocktrails init
   blocktrails genesis '{"counter": 0}'
   blocktrails advance '{"counter": 1}'
-  blocktrails show
+  blocktrails fund --broadcast              # base → GENESIS
+  blocktrails spend --broadcast             # GENESIS → State 1
+  blocktrails spend '{"counter": 2}' -b     # HEAD → new state
+  blocktrails show --online
   blocktrails export -o trail.json
   blocktrails verify trail.json
 `);
@@ -485,7 +913,7 @@ function showVersion() {
 // Main
 // ============================================
 
-function main() {
+async function main() {
   const { options, positional } = parseArgs(process.argv.slice(2));
 
   if (options.version) {
@@ -523,7 +951,7 @@ function main() {
         break;
 
       case 'show':
-        cmdShow(options);
+        await cmdShow(options);
         break;
 
       case 'export':
@@ -532,6 +960,14 @@ function main() {
 
       case 'verify':
         cmdVerify(positional[1], options);
+        break;
+
+      case 'fund':
+        await cmdFund(options);
+        break;
+
+      case 'spend':
+        await cmdSpend(positional[1], options); // positional[1] may be undefined
         break;
 
       default:
