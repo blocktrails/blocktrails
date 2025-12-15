@@ -3,6 +3,9 @@
   "version": "0.0.3",
   "description": "Nostr-native output-key commitment chaining on Bitcoin",
   "main": "src/index.js",
+  "bin": {
+    "blocktrails": "src/cli.js"
+  },
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
