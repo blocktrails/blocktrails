@@ -9,6 +9,8 @@ import {
   computeTweak, // backward compat alias
   derivePrivateKey,
   derivePublicKey,
+  deriveChainedPrivateKey,
+  deriveChainedPublicKey,
   p2trXonly,
   hasEvenY,
   genesis,
@@ -129,9 +131,10 @@ describe('genesis', () => {
 });
 
 describe('transition', () => {
-  test('creates valid transition', () => {
-    const result = transition(TEST_PRIVKEY, 'state 0', 'state 1');
-    assert.ok(result.prevState, 'Should have prevState');
+  test('creates valid transition (chained)', () => {
+    // transition now takes [prevStates], newState
+    const result = transition(TEST_PRIVKEY, ['state 0'], 'state 1');
+    assert.ok(result.prevStates, 'Should have prevStates');
     assert.ok(result.newState, 'Should have newState');
     assert.ok(result.signingPrivateKey, 'Should have signingPrivateKey');
     assert.ok(result.prevWitnessProgram, 'Should have prevWitnessProgram');
@@ -139,19 +142,38 @@ describe('transition', () => {
   });
 
   test('prev and new witness programs differ', () => {
-    const result = transition(TEST_PRIVKEY, 'state 0', 'state 1');
+    const result = transition(TEST_PRIVKEY, ['state 0'], 'state 1');
     assert.notStrictEqual(result.prevWitnessProgram, result.newWitnessProgram);
+  });
+
+  test('chained transitions accumulate tweaks', () => {
+    const pubBase = hexToBytes('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798');
+
+    // P0 = P_base + t0
+    const P0 = deriveChainedPublicKey(pubBase, ['s0']);
+    // P1 = P0 + t1 = P_base + t0 + t1
+    const P1 = deriveChainedPublicKey(pubBase, ['s0', 's1']);
+    // P2 = P1 + t2 = P_base + t0 + t1 + t2
+    const P2 = deriveChainedPublicKey(pubBase, ['s0', 's1', 's2']);
+
+    // All should be different
+    assert.notStrictEqual(bytesToHex(P0), bytesToHex(P1));
+    assert.notStrictEqual(bytesToHex(P1), bytesToHex(P2));
+    assert.notStrictEqual(bytesToHex(P0), bytesToHex(P2));
   });
 });
 
 describe('verify', () => {
-  test('verifies valid chain', () => {
+  test('verifies valid chained chain', () => {
     const pubBase = hexToBytes('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798');
     const states = ['state 0', 'state 1', 'state 2'];
-    const witnessPrograms = states.map(s => {
-      const P = derivePublicKey(pubBase, s);
-      return p2trXonly(P);
-    });
+
+    // Generate chained witness programs
+    const witnessPrograms = [];
+    for (let i = 0; i < states.length; i++) {
+      const P = deriveChainedPublicKey(pubBase, states.slice(0, i + 1));
+      witnessPrograms.push(p2trXonly(P));
+    }
 
     const result = verify(pubBase, states, witnessPrograms);
     assert.strictEqual(result.valid, true);
