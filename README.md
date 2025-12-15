@@ -1,6 +1,6 @@
 # blocktrails-js
 
-Reference implementation of [Blocktrails](https://blocktrails.github.io) — Nostr-native output-key commitment chaining on Bitcoin.
+Reference implementation of [Blocktrails](https://blocktrails.org) — Nostr-native output-key commitment chaining on Bitcoin.
 
 ## Install
 
@@ -117,7 +117,7 @@ npm run demo
 
 ## Spec
 
-See the full specification at [blocktrails.github.io/spec](https://blocktrails.github.io/spec/).
+See the full specification at [blocktrails.org/spec](https://blocktrails.org/spec/).
 
 ## License
 
