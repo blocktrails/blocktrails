@@ -13,7 +13,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/blocktrails/blocktrails-js"
+    "url": "https://github.com/blocktrails/blocktrails"
   },
   "dependencies": {
     "@noble/secp256k1": "^2.1.0",
