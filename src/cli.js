@@ -77,7 +77,7 @@ function saveTrail(trail, options) {
     version: 1,
     publicKeyBase: bytesToHex(trail.publicKeyBase),
     states: trail.states,
-    network: options.network || 'testnet'
+    network: options.network || 'tbtc4'
   };
   writeFileSync(path, JSON.stringify(data, null, 2) + '\n');
   return path;
@@ -136,7 +136,7 @@ function encodeBech32m(hrp, witnessProgram) {
 }
 
 function getHrp(network) {
-  return network === 'mainnet' ? 'bc' : 'tb';
+  return network === 'mainnet' ? 'bc' : 'tb'; // tbtc4 uses 'tb' prefix
 }
 
 // ============================================
@@ -181,7 +181,7 @@ function cmdInit(options) {
     version: 1,
     publicKeyBase: publicKeyHex,
     states: [],
-    network: options.network || 'testnet'
+    network: options.network || 'tbtc4'
   };
 
   writeFileSync(existingPath, JSON.stringify(data, null, 2) + '\n');
@@ -218,7 +218,7 @@ function cmdGenesis(state, options) {
   const result = trail.genesis(state);
 
   const path = saveTrail(trail, options);
-  const hrp = getHrp(options.network || 'testnet');
+  const hrp = getHrp(options.network || 'tbtc4');
   const address = encodeBech32m(hrp, hexToBytes(result.witnessProgram));
 
   console.log(`Genesis created`);
@@ -255,7 +255,7 @@ function cmdAdvance(state, options) {
   const result = trail.advance(state);
 
   const path = saveTrail(trail, { ...options, network: existingTrail.network });
-  const hrp = getHrp(existingTrail.network || 'testnet');
+  const hrp = getHrp(existingTrail.network || 'tbtc4');
   const address = encodeBech32m(hrp, hexToBytes(result.newWitnessProgram));
 
   console.log(`State ${trail.states.length - 1} -> ${trail.states.length}`);
@@ -272,11 +272,11 @@ function cmdShow(options) {
     process.exit(1);
   }
 
-  const hrp = getHrp(trail.network || 'testnet');
+  const hrp = getHrp(trail.network || 'tbtc4');
   const publicKeyBase = hexToBytes(trail.publicKeyBase);
 
   console.log(`Trail: ${getTrailPath(options)}`);
-  console.log(`Network: ${trail.network || 'testnet'}`);
+  console.log(`Network: ${trail.network || 'tbtc4'}`);
   console.log(`Public key: ${trail.publicKeyBase}`);
   console.log(`States: ${trail.states.length}`);
   console.log('');
@@ -337,7 +337,7 @@ function cmdExport(options) {
   const exportData = {
     version: 1,
     publicKeyBase: trail.publicKeyBase,
-    network: trail.network || 'testnet',
+    network: trail.network || 'tbtc4',
     states: trail.states,
     witnessPrograms
   };
@@ -455,7 +455,7 @@ Commands:
 Options:
   -k, --key <hex>         Private key (hex)
   -f, --file <path>       Trail file (default: .blocktrail.json)
-  -n, --network <net>     Network: mainnet or testnet (default: testnet)
+  -n, --network <net>     Network: mainnet or tbtc4 (default: tbtc4)
   -o, --output <path>     Output file for export
   --force                 Overwrite existing files
   -h, --help              Show this help
