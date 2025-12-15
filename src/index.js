@@ -11,50 +11,57 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 const N = secp.CURVE.n;
 
 /**
- * Compute tweak from state: t = H(serialize(s)) mod n
- * @param {Uint8Array|string} state - State bytes or string
- * @returns {bigint} Tweak value
+ * Compute scalar tweak from state per spec:
+ *   h = sha256(serialize(s))
+ *   t = int(h, big-endian) mod n
+ *   if t == 0: reject state as invalid
+ *   return t
+ *
+ * @param {Uint8Array|string} state - State bytes or string (serialized)
+ * @returns {bigint} Tweak value in range [1, n-1]
+ * @throws {Error} If tweak is zero (probability ~2^-256)
  */
-export function computeTweak(state) {
+export function scalar(state) {
   const stateBytes = typeof state === 'string'
     ? new TextEncoder().encode(state)
     : state;
   const hash = sha256(stateBytes);
   const t = bytesToBigInt(hash) % N;
+
+  // Per spec: "Implementations MUST reject states where t = 0"
+  if (t === 0n) {
+    throw new Error('Invalid state: tweak is zero');
+  }
+
   return t;
 }
+
+// Backward compatibility alias
+export const computeTweak = scalar;
 
 /**
  * Derive private key for a state: d = d_base + t
  * @param {Uint8Array} privateKeyBase - Base private key (32 bytes)
  * @param {Uint8Array|string} state - State to commit to
  * @returns {Uint8Array} Derived private key (32 bytes)
+ * @throws {Error} If scalar(state) is zero
  */
 export function derivePrivateKey(privateKeyBase, state) {
   const dBase = bytesToBigInt(privateKeyBase);
-  const t = computeTweak(state);
-
-  // t = 0 is invalid per spec
-  if (t === 0n) {
-    throw new Error('Invalid state: tweak is zero');
-  }
-
+  const t = scalar(state); // throws if t == 0
   const d = (dBase + t) % N;
   return bigIntToBytes(d, 32);
 }
 
 /**
- * Derive public key for a state: P = d·G = P_base + t·G
+ * Derive public key for a state: P = P_base + t·G
  * @param {Uint8Array} publicKeyBase - Base public key (33 bytes compressed)
  * @param {Uint8Array|string} state - State to commit to
  * @returns {Uint8Array} Derived public key (33 bytes compressed)
+ * @throws {Error} If scalar(state) is zero
  */
 export function derivePublicKey(publicKeyBase, state) {
-  const t = computeTweak(state);
-
-  if (t === 0n) {
-    throw new Error('Invalid state: tweak is zero');
-  }
+  const t = scalar(state); // throws if t == 0
 
   // P_base + t·G
   const PBase = secp.ProjectivePoint.fromHex(publicKeyBase);

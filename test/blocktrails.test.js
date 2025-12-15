@@ -5,7 +5,8 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import {
-  computeTweak,
+  scalar,
+  computeTweak, // backward compat alias
   derivePrivateKey,
   derivePublicKey,
   p2trXonly,
@@ -21,29 +22,42 @@ import {
 // Test private key (DO NOT USE IN PRODUCTION)
 const TEST_PRIVKEY = hexToBytes('0000000000000000000000000000000000000000000000000000000000000001');
 
-describe('computeTweak', () => {
+describe('scalar', () => {
   test('produces non-zero tweak for typical state', () => {
-    const t = computeTweak('hello world');
+    const t = scalar('hello world');
     assert.ok(t > 0n, 'Tweak should be positive');
   });
 
   test('produces consistent results', () => {
-    const t1 = computeTweak('test state');
-    const t2 = computeTweak('test state');
+    const t1 = scalar('test state');
+    const t2 = scalar('test state');
     assert.strictEqual(t1, t2, 'Same input should produce same tweak');
   });
 
   test('different states produce different tweaks', () => {
-    const t1 = computeTweak('state 1');
-    const t2 = computeTweak('state 2');
+    const t1 = scalar('state 1');
+    const t2 = scalar('state 2');
     assert.notStrictEqual(t1, t2, 'Different inputs should produce different tweaks');
   });
 
   test('handles Uint8Array input', () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const t = computeTweak(bytes);
+    const t = scalar(bytes);
     assert.ok(t > 0n, 'Should handle bytes');
   });
+
+  test('computeTweak is alias for scalar (backward compat)', () => {
+    const t1 = scalar('test');
+    const t2 = computeTweak('test');
+    assert.strictEqual(t1, t2, 'computeTweak should be alias for scalar');
+  });
+
+  // Note: Testing t=0 rejection requires finding a preimage that hashes to 0 mod n,
+  // which is computationally infeasible (~2^-256 probability). The check is tested
+  // implicitly through code coverage. If we had such a state, this would test it:
+  // test('rejects state with zero tweak', () => {
+  //   assert.throws(() => scalar(MAGIC_ZERO_STATE), /zero/i);
+  // });
 });
 
 describe('derivePrivateKey', () => {
