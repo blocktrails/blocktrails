@@ -9,6 +9,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import * as secp from '@noble/secp256k1';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
+import { finalizeEvent, Relay } from 'nostr-tools';
 import {
   Blocktrail,
   verify,
@@ -1093,6 +1094,78 @@ function cmdCache(subcommand, options) {
 }
 
 // ============================================
+// Nostr Publishing
+// ============================================
+
+const DEFAULT_RELAY = 'wss://relay.damus.io';
+
+async function cmdPublish(options) {
+  // Load trail
+  const trail = loadTrail(options);
+  if (!trail) {
+    console.error('No trail found. Run "init" or "genesis" first.');
+    process.exit(1);
+  }
+
+  // Get private key
+  const privateKey = getPrivateKey(options);
+  if (!privateKey) {
+    console.error('No private key found. Use --key or set git config nostr.privkey');
+    process.exit(1);
+  }
+
+  // Verify private key matches trail
+  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+    console.error('Private key does not match trail public key');
+    process.exit(1);
+  }
+
+  // Get x-only pubkey (32 bytes) for Nostr
+  const xOnlyPubkey = bytesToHex(publicKey.slice(1)); // Remove prefix byte
+
+  const relay = options.relay || DEFAULT_RELAY;
+
+  // Create Nostr event (kind 30333 - parameterized replaceable)
+  const eventTemplate = {
+    kind: 30333,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [
+      ['d', xOnlyPubkey], // d-tag = pubkey for uniqueness
+      ['t', 'blocktrail'],
+      ['n', trail.network || 'tbtc4'],
+      ['tip', String(trail.states.length)]
+    ],
+    content: JSON.stringify(trail)
+  };
+
+  // Sign the event with nostr-tools
+  const signedEvent = finalizeEvent(eventTemplate, hexToBytes(privateKey));
+
+  console.log(`Publishing trail to ${relay}`);
+  console.log(`  Pubkey: ${xOnlyPubkey}`);
+  console.log(`  States: ${trail.states.length}`);
+  console.log(`  Event ID: ${signedEvent.id}`);
+
+  // Connect and publish
+  let relayConn;
+  try {
+    relayConn = await Relay.connect(relay);
+    console.log(`  Connected to ${relay}`);
+
+    await relayConn.publish(signedEvent);
+    console.log(`✓ Published successfully`);
+  } catch (e) {
+    console.error(`✗ Publish failed: ${e.message}`);
+    process.exit(1);
+  } finally {
+    if (relayConn) {
+      relayConn.close();
+    }
+  }
+}
+
+// ============================================
 // Argument Parsing
 // ============================================
 
@@ -1127,6 +1200,8 @@ function parseArgs(args) {
       options.showRaw = true;
     } else if (arg === '--online') {
       options.online = true;
+    } else if (arg === '--relay') {
+      options.relay = args[++i];
     } else if (!arg.startsWith('-')) {
       positional.push(arg);
     }
@@ -1153,6 +1228,7 @@ Commands:
   export                  Export trail with witness programs
   verify [file]           Verify a trail
   cache [clear|path]      Show cache stats, clear cache, or show cache path
+  publish                 Publish trail to Nostr relay
 
 Options:
   -k, --key <hex>         Private key (hex)
@@ -1168,6 +1244,9 @@ Spend Options:
   --fee-rate <sat/vB>             Fee rate (default: auto-fetch)
   -b, --broadcast                 Broadcast transaction
   -r, --raw                       Show raw transaction hex
+
+Nostr Options:
+  --relay <url>                   Relay URL (default: wss://relay.damus.io)
 
 Key Sources (in priority order):
   1. --key flag
@@ -1185,6 +1264,7 @@ Examples:
   blocktrails show --online
   blocktrails export -o trail.json
   blocktrails verify trail.json
+  blocktrails publish                       # publish to Nostr relay
 `);
 }
 
@@ -1264,6 +1344,10 @@ async function main() {
 
       case 'cache':
         cmdCache(positional[1], options); // subcommand: clear, path, or undefined
+        break;
+
+      case 'publish':
+        await cmdPublish(options);
         break;
 
       default:

@@ -2,7 +2,7 @@
 
 Reference implementation of [Blocktrails](https://blocktrails.org) — Nostr-native state anchoring on Bitcoin.
 
-**[Live Demo](https://blocktrails.org/demo/)** · **[Specification](https://blocktrails.org/spec/)** · **[Profiles (MRC20)](https://blocktrails.org/spec/profiles.html)**
+**[Live Demo](https://blocktrails.org/demo/)** · **[Specification](https://blocktrails.org/spec/)** · **[Profiles (MRC20)](https://blocktrails.org/spec/profiles.html)** · **[NATEOS Viewer](https://play-grounds.github.io/blocktrails/)**
 
 ## What is this?
 
@@ -130,6 +130,9 @@ blocktrails spend '{"balance": 800}' -b  # advance to new state
 # Exit trail - send funds to external address
 blocktrails exodus tb1p... --broadcast
 
+# Publish to Nostr (NATEOS)
+blocktrails publish --relay wss://relay.damus.io
+
 # View trail with on-chain status
 blocktrails show --online
 ```
@@ -144,6 +147,7 @@ blocktrails show --online
 | `fund` | Move funds from base address to GENESIS (on-chain) |
 | `spend [state]` | Advance on-chain (to next state, or new state if provided) |
 | `exodus <address>` | Send funds to external address (exit trail) |
+| `publish` | Publish trail to Nostr relay (NATEOS) |
 | `show` | Show trail status (add `--online` for on-chain status) |
 | `export` | Export trail with witness programs |
 | `verify [file]` | Verify a trail |

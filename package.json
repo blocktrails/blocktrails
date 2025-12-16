@@ -1,6 +1,6 @@
 {
   "name": "blocktrails",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Nostr-native output-key commitment chaining on Bitcoin",
   "main": "src/index.js",
   "bin": {
@@ -11,7 +11,14 @@
     "test": "node --test test/*.test.js",
     "demo": "node demo/demo.js"
   },
-  "keywords": ["bitcoin", "nostr", "taproot", "p2tr", "state", "commitment"],
+  "keywords": [
+    "bitcoin",
+    "nostr",
+    "taproot",
+    "p2tr",
+    "state",
+    "commitment"
+  ],
   "author": "",
   "license": "MIT",
   "repository": {
@@ -19,7 +26,8 @@
     "url": "https://github.com/blocktrails/blocktrails"
   },
   "dependencies": {
+    "@noble/hashes": "^1.4.0",
     "@noble/secp256k1": "^2.1.0",
-    "@noble/hashes": "^1.4.0"
+    "nostr-tools": "^2.19.3"
   }
 }
