@@ -25,7 +25,10 @@ import {
   getUtxos,
   getAddressTxs,
   broadcast as broadcastTx,
-  getFeeRates
+  getFeeRates,
+  getCacheDir,
+  getCacheStats,
+  clearCache
 } from './index.js';
 
 const DEFAULT_FILE = '.blocktrail.json';
@@ -812,6 +815,32 @@ async function cmdSpend(newState, options) {
 }
 
 // ============================================
+// Cache Management
+// ============================================
+
+function cmdCache(subcommand, options) {
+  const network = options.network || 'tbtc4';
+
+  if (subcommand === 'clear') {
+    clearCache(network);
+    console.log(`Cache cleared for ${network}`);
+    return;
+  }
+
+  if (subcommand === 'path') {
+    console.log(getCacheDir(network));
+    return;
+  }
+
+  // Default: show stats
+  const stats = getCacheStats(network);
+  console.log(`Cache: ${getCacheDir(network)}`);
+  console.log(`Network: ${network}`);
+  console.log(`Transactions: ${stats.count}`);
+  console.log(`Size: ${stats.sizeHuman}`);
+}
+
+// ============================================
 // Argument Parsing
 // ============================================
 
@@ -870,6 +899,7 @@ Commands:
   show                    Show trail status (add --online for on-chain status)
   export                  Export trail with witness programs
   verify [file]           Verify a trail
+  cache [clear|path]      Show cache stats, clear cache, or show cache path
 
 Options:
   -k, --key <hex>         Private key (hex)
@@ -968,6 +998,10 @@ async function main() {
 
       case 'spend':
         await cmdSpend(positional[1], options); // positional[1] may be undefined
+        break;
+
+      case 'cache':
+        cmdCache(positional[1], options); // subcommand: clear, path, or undefined
         break;
 
       default:

@@ -435,3 +435,13 @@ export {
   getAddressTxs,
   waitForConfirmation
 } from './broadcast.js';
+
+// Re-export cache module
+export {
+  getCacheDir,
+  getCachedTx,
+  cacheTx,
+  isCachedAndConfirmed,
+  clearCache,
+  getCacheStats
+} from './cache.js';

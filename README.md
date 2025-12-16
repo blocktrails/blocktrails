@@ -143,6 +143,7 @@ blocktrails show --online
 | `show` | Show trail status (add `--online` for on-chain status) |
 | `export` | Export trail with witness programs |
 | `verify [file]` | Verify a trail |
+| `cache [clear\|path]` | Show cache stats, clear cache, or show path |
 
 ## Transaction API
 
@@ -172,6 +173,37 @@ const txHex = bytesToHex(serializeTransaction(signed));
 const txid = await broadcast(txHex, 'tbtc4');
 ```
 
+## Local Cache
+
+Transaction data is cached locally in `~/.spv/{network}/tx/` to reduce API calls and enable offline access to previously fetched data.
+
+```bash
+# View cache stats
+blocktrails cache
+
+# Clear cache
+blocktrails cache clear
+
+# Show cache directory
+blocktrails cache path
+```
+
+```javascript
+import {
+  getCachedTx,
+  cacheTx,
+  getCacheStats,
+  clearCache
+} from 'blocktrails';
+
+// getTransaction() automatically uses cache
+const tx = await getTransaction(txid, 'tbtc4');
+
+// Manual cache access
+const cached = getCachedTx(txid, 'tbtc4');
+const stats = getCacheStats('tbtc4');  // { count, size, sizeHuman }
+```
+
 ## Run Demo
 
 ```bash
@@ -183,7 +215,7 @@ Or try the [live interactive demo](https://blocktrails.org/demo/) on testnet4.
 ## Run Tests
 
 ```bash
-npm test  # 91 tests
+npm test  # 102 tests
 ```
 
 ## Specification

@@ -2,6 +2,8 @@
  * Bitcoin Network Broadcasting via Esplora API
  */
 
+import { getCachedTx, cacheTx } from './cache.js';
+
 const ENDPOINTS = {
   mainnet: 'https://blockstream.info/api',
   tbtc4: 'https://mempool.space/testnet4/api'
@@ -53,20 +55,53 @@ export async function getUtxos(address, network = 'tbtc4') {
 }
 
 /**
- * Get transaction details
+ * Get transaction details (with caching)
  *
  * @param {string} txid - Transaction ID
  * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {Object} options - Options
+ * @param {boolean} options.skipCache - Skip cache lookup
+ * @param {boolean} options.noCache - Don't write to cache
  * @returns {Promise<Object>} Transaction details
  */
-export async function getTransaction(txid, network = 'tbtc4') {
+export async function getTransaction(txid, network = 'tbtc4', options = {}) {
   const base = ENDPOINTS[network];
   if (!base) {
     throw new Error(`Unknown network: ${network}`);
   }
 
+  // Check cache first (unless skipCache or tx was unconfirmed)
+  if (!options.skipCache) {
+    const cached = getCachedTx(txid, network);
+    if (cached?.confirmed) {
+      // Confirmed tx won't change, return cached
+      return {
+        txid: cached.txid,
+        version: cached.version,
+        locktime: cached.locktime,
+        vin: cached.vin,
+        vout: cached.vout,
+        fee: cached.fee,
+        status: {
+          confirmed: cached.confirmed,
+          block_hash: cached.blockHash,
+          block_height: cached.blockHeight,
+          block_time: cached.blockTime
+        }
+      };
+    }
+  }
+
+  // Fetch from API
   const response = await fetchApi(`${base}/tx/${txid}`);
-  return response.json();
+  const txData = await response.json();
+
+  // Cache if confirmed (or always cache, will update on next fetch if unconfirmed)
+  if (!options.noCache) {
+    cacheTx(txid, txData, network);
+  }
+
+  return txData;
 }
 
 /**
