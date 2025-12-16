@@ -69,6 +69,22 @@ function generatePrivateKey() {
   return bytesToHex(bytes);
 }
 
+/**
+ * Parse state argument - try JSON first, fall back to string
+ * This ensures numbers, booleans, objects, arrays are handled correctly
+ */
+function parseState(input) {
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(input);
+    // Re-stringify to get canonical form
+    return JSON.stringify(parsed);
+  } catch {
+    // Not valid JSON, treat as plain string
+    return input;
+  }
+}
+
 // ============================================
 // Trail File Management
 // ============================================
@@ -220,7 +236,7 @@ function cmdInit(options) {
   }
 }
 
-function cmdGenesis(state, options) {
+function cmdGenesis(stateArg, options) {
   const existingTrail = loadTrail(options);
 
   if (existingTrail && existingTrail.states.length > 0) {
@@ -234,6 +250,7 @@ function cmdGenesis(state, options) {
     process.exit(1);
   }
 
+  const state = parseState(stateArg);
   const trail = new Blocktrail(privateKey);
   const result = trail.genesis(state);
 
@@ -247,7 +264,7 @@ function cmdGenesis(state, options) {
   console.log(`Saved: ${path}`);
 }
 
-function cmdAdvance(state, options) {
+function cmdAdvance(stateArg, options) {
   const existingTrail = loadTrail(options);
 
   if (!existingTrail || existingTrail.states.length === 0) {
@@ -272,6 +289,7 @@ function cmdAdvance(state, options) {
     process.exit(1);
   }
 
+  const state = parseState(stateArg);
   const result = trail.advance(state);
 
   const path = saveTrail(trail, { ...options, network: existingTrail.network });

@@ -361,6 +361,54 @@ describe('CLI', () => {
       const data = JSON.parse(readFileSync(trailFile, 'utf8'));
       assert.strictEqual(data.states[0], jsonState);
     });
+
+    test('handles numeric state correctly', () => {
+      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      // Pass number as argument - should be parsed as JSON number
+      const { exitCode } = runCli(`genesis 42 -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      assert.strictEqual(exitCode, 0);
+
+      const data = JSON.parse(readFileSync(trailFile, 'utf8'));
+      // Should be stored as "42" (JSON stringified number)
+      assert.strictEqual(data.states[0], '42');
+    });
+
+    test('handles boolean state correctly', () => {
+      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      const { exitCode } = runCli(`genesis true -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      assert.strictEqual(exitCode, 0);
+
+      const data = JSON.parse(readFileSync(trailFile, 'utf8'));
+      assert.strictEqual(data.states[0], 'true');
+    });
+
+    test('handles null state correctly', () => {
+      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      const { exitCode } = runCli(`genesis null -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      assert.strictEqual(exitCode, 0);
+
+      const data = JSON.parse(readFileSync(trailFile, 'utf8'));
+      assert.strictEqual(data.states[0], 'null');
+    });
+
+    test('handles array state correctly', () => {
+      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      const { exitCode } = runCli(`genesis '[1,2,3]' -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      assert.strictEqual(exitCode, 0);
+
+      const data = JSON.parse(readFileSync(trailFile, 'utf8'));
+      assert.strictEqual(data.states[0], '[1,2,3]');
+    });
+
+    test('plain string without quotes stays as string', () => {
+      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      const { exitCode } = runCli(`genesis hello -f ${trailFile} --key ${TEST_PRIVKEY}`);
+      assert.strictEqual(exitCode, 0);
+
+      const data = JSON.parse(readFileSync(trailFile, 'utf8'));
+      // "hello" is not valid JSON, so stays as plain string
+      assert.strictEqual(data.states[0], 'hello');
+    });
   });
 
   describe('address determinism', () => {
