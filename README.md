@@ -127,6 +127,9 @@ blocktrails fund --broadcast           # base → GENESIS
 blocktrails spend --broadcast          # GENESIS → State 1
 blocktrails spend '{"balance": 800}' -b  # advance to new state
 
+# Exit trail - send funds to external address
+blocktrails exodus tb1p... --broadcast
+
 # View trail with on-chain status
 blocktrails show --online
 ```
@@ -140,6 +143,7 @@ blocktrails show --online
 | `advance <state>` | Advance to new state (off-chain) |
 | `fund` | Move funds from base address to GENESIS (on-chain) |
 | `spend [state]` | Advance on-chain (to next state, or new state if provided) |
+| `exodus <address>` | Send funds to external address (exit trail) |
 | `show` | Show trail status (add `--online` for on-chain status) |
 | `export` | Export trail with witness programs |
 | `verify [file]` | Verify a trail |

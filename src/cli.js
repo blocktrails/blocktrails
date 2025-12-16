@@ -175,6 +175,81 @@ function getHrp(network) {
   return network === 'mainnet' ? 'bc' : 'tb'; // tbtc4 uses 'tb' prefix
 }
 
+/**
+ * Decode a bech32m address to witness program
+ * @param {string} address - Bech32m address (bc1p... or tb1p...)
+ * @returns {{ hrp: string, version: number, witnessProgram: Uint8Array }} Decoded address
+ */
+function decodeBech32m(address) {
+  const addr = address.toLowerCase();
+  const sepIndex = addr.lastIndexOf('1');
+  if (sepIndex < 1 || sepIndex + 7 > addr.length) {
+    throw new Error('Invalid bech32m address: missing separator');
+  }
+
+  const hrp = addr.slice(0, sepIndex);
+  const dataChars = addr.slice(sepIndex + 1);
+
+  // Decode characters to 5-bit values
+  const data = [];
+  for (const c of dataChars) {
+    const idx = CHARSET.indexOf(c);
+    if (idx === -1) {
+      throw new Error(`Invalid bech32m character: ${c}`);
+    }
+    data.push(idx);
+  }
+
+  // Verify checksum
+  const polymod = bech32Polymod([...bech32HrpExpand(hrp), ...data]);
+  if (polymod !== BECH32M_CONST) {
+    throw new Error('Invalid bech32m checksum');
+  }
+
+  // Remove checksum (last 6 values) and extract version
+  const values = data.slice(0, -6);
+  const version = values[0];
+
+  if (version !== 1) {
+    throw new Error(`Unsupported witness version: ${version} (expected 1 for P2TR)`);
+  }
+
+  // Convert remaining 5-bit values to 8-bit
+  const payload = values.slice(1);
+  const witnessProgram = convertBitsBack(payload, 5, 8);
+
+  if (witnessProgram.length !== 32) {
+    throw new Error(`Invalid witness program length: ${witnessProgram.length} (expected 32)`);
+  }
+
+  return { hrp, version, witnessProgram: new Uint8Array(witnessProgram) };
+}
+
+/**
+ * Convert bits back (5-bit to 8-bit, no padding)
+ */
+function convertBitsBack(data, fromBits, toBits) {
+  let acc = 0, bits = 0;
+  const ret = [];
+  const maxv = (1 << toBits) - 1;
+
+  for (const value of data) {
+    acc = (acc << fromBits) | value;
+    bits += fromBits;
+    while (bits >= toBits) {
+      bits -= toBits;
+      ret.push((acc >> bits) & maxv);
+    }
+  }
+
+  // Check for invalid padding
+  if (bits >= fromBits || ((acc << (toBits - bits)) & maxv)) {
+    // Ignore padding bits
+  }
+
+  return ret;
+}
+
 // ============================================
 // Commands
 // ============================================
@@ -832,6 +907,165 @@ async function cmdSpend(newState, options) {
   }
 }
 
+async function cmdExodus(destAddress, options) {
+  // Validate destination address
+  let destWP;
+  try {
+    const decoded = decodeBech32m(destAddress);
+    destWP = decoded.witnessProgram;
+  } catch (e) {
+    console.error(`Invalid destination address: ${e.message}`);
+    process.exit(1);
+  }
+
+  // Load trail
+  const trail = loadTrail(options);
+  if (!trail || trail.states.length === 0) {
+    console.error('No trail found. Run "genesis" first.');
+    process.exit(1);
+  }
+
+  // Get private key
+  const privateKey = getPrivateKey(options);
+  if (!privateKey) {
+    console.error('No private key found. Use --key or set git config nostr.privkey');
+    process.exit(1);
+  }
+
+  // Verify private key matches trail
+  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+    console.error('Private key does not match trail public key');
+    process.exit(1);
+  }
+
+  const network = trail.network || 'tbtc4';
+  const hrp = getHrp(network);
+  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+
+  // Build list of all state addresses
+  const stateAddresses = [];
+  for (let i = 0; i < trail.states.length; i++) {
+    const statesUpTo = trail.states.slice(0, i + 1);
+    const P = deriveChainedPublicKey(publicKeyBase, statesUpTo);
+    const wp = p2trXonly(P);
+    const address = encodeBech32m(hrp, wp);
+    stateAddresses.push({ index: i, states: statesUpTo, wp, address });
+  }
+
+  // Find which address has UTXOs
+  console.log('Scanning for UTXOs...');
+  let sourceIndex = -1;
+  let utxos = [];
+
+  for (let i = 0; i < stateAddresses.length; i++) {
+    const { address, index } = stateAddresses[i];
+    try {
+      const found = await getUtxos(address, network);
+      if (found.length > 0) {
+        sourceIndex = index;
+        utxos = found.map(u => ({ ...u, witnessProgram: stateAddresses[i].wp }));
+        const label = index === 0 ? 'GENESIS' : index === trail.states.length - 1 ? 'HEAD' : `State ${index}`;
+        console.log(`Found ${utxos.length} UTXO(s) at [${index}] ${label}: ${utxos.reduce((s, u) => s + u.amount, 0)} sats`);
+        break;
+      }
+    } catch (e) {
+      console.error(`Error checking state ${i}: ${e.message}`);
+    }
+  }
+
+  if (sourceIndex === -1) {
+    console.error('No UTXOs found at any state address.');
+    console.error('Nothing to exodus.');
+    process.exit(1);
+  }
+
+  console.log(`Destination: ${destAddress}`);
+
+  // Calculate fee
+  let feeRate = options.feeRate;
+  if (!feeRate) {
+    try {
+      const rates = await getFeeRates(network);
+      feeRate = rates.halfHour;
+      console.log(`Using fee rate: ${feeRate} sat/vB`);
+    } catch {
+      feeRate = 1;
+      console.log(`Using default fee rate: ${feeRate} sat/vB`);
+    }
+  }
+
+  const vsize = estimateVsize(utxos.length, 1);
+  const fee = Math.ceil(vsize * feeRate);
+  const totalIn = utxos.reduce((sum, u) => sum + u.amount, 0);
+  const outputAmount = totalIn - fee;
+
+  if (outputAmount <= 546) {
+    console.error(`Insufficient funds: ${totalIn} sats, fee ${fee} sats`);
+    process.exit(1);
+  }
+
+  // Get signing key for source state
+  const sourceStates = trail.states.slice(0, sourceIndex + 1);
+  const signingKey = deriveChainedPrivateKey(hexToBytes(privateKey), sourceStates);
+
+  // Build transaction
+  const tx = buildTransaction({
+    inputs: utxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      amount: u.amount,
+      witnessProgram: u.witnessProgram
+    })),
+    outputs: [{
+      witnessProgram: destWP,
+      value: outputAmount
+    }]
+  });
+
+  // Sign transaction
+  const signingKeys = utxos.map(() => signingKey);
+  const signedTx = signTransaction(tx, signingKeys, utxos);
+
+  // Serialize
+  const txBytes = serializeTransaction(signedTx);
+  const txHex = bytesToHex(txBytes);
+  const txid = computeTxid(signedTx);
+
+  const sourceLabel = sourceIndex === 0 ? 'GENESIS' : sourceIndex === trail.states.length - 1 ? 'HEAD' : `State ${sourceIndex}`;
+
+  console.log('');
+  console.log(`Exodus transaction: [${sourceIndex}] ${sourceLabel} → external`);
+  console.log(`  TXID: ${txid}`);
+  console.log(`  Fee: ${fee} sats (${feeRate} sat/vB)`);
+  console.log(`  Output: ${outputAmount} sats → ${destAddress}`);
+
+  if (options.showRaw) {
+    console.log('');
+    console.log('Raw transaction:');
+    console.log(txHex);
+  }
+
+  // Broadcast if requested
+  if (options.broadcast) {
+    console.log('');
+    console.log('Broadcasting...');
+    try {
+      const broadcastTxid = await broadcastTx(txHex, network);
+      console.log(`✓ Broadcast successful!`);
+      console.log(`  TXID: ${broadcastTxid}`);
+      console.log('');
+      console.log('Note: Trail file unchanged. Funds have exited the trail.');
+    } catch (e) {
+      console.error(`✗ Broadcast failed: ${e.message}`);
+      process.exit(1);
+    }
+  } else {
+    console.log('');
+    console.log('Dry run complete. Use --broadcast to send transaction.');
+  }
+}
+
 // ============================================
 // Cache Management
 // ============================================
@@ -914,6 +1148,7 @@ Commands:
   advance <state>         Advance to new state (off-chain)
   fund                    Move funds from base address to GENESIS (on-chain)
   spend [state]           Advance on-chain (to next state, or new state if provided)
+  exodus <address>        Send funds to external address (exit trail)
   show                    Show trail status (add --online for on-chain status)
   export                  Export trail with witness programs
   verify [file]           Verify a trail
@@ -946,6 +1181,7 @@ Examples:
   blocktrails fund --broadcast              # base → GENESIS
   blocktrails spend --broadcast             # GENESIS → State 1
   blocktrails spend '{"counter": 2}' -b     # HEAD → new state
+  blocktrails exodus tb1p... --broadcast    # exit trail to external address
   blocktrails show --online
   blocktrails export -o trail.json
   blocktrails verify trail.json
@@ -1016,6 +1252,14 @@ async function main() {
 
       case 'spend':
         await cmdSpend(positional[1], options); // positional[1] may be undefined
+        break;
+
+      case 'exodus':
+        if (!positional[1]) {
+          console.error('Usage: blocktrails exodus <destination-address>');
+          process.exit(1);
+        }
+        await cmdExodus(positional[1], options);
         break;
 
       case 'cache':
