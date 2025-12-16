@@ -4,6 +4,9 @@
  * Nostr-native output-key commitment chaining on Bitcoin
  */
 
+import WebSocket from 'ws';
+globalThis.WebSocket = WebSocket;
+
 import { execSync } from 'child_process';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
