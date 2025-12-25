@@ -118,14 +118,16 @@ npm install -g blocktrails
 # Initialize a new trail
 blocktrails init
 
-# Create states (off-chain)
-blocktrails genesis '{"balance": 1000}'
-blocktrails advance '{"balance": 900}'
+# Mark state (unified command - broadcasts by default)
+blocktrails mark '{"balance": 1000}'     # genesis + fund
+blocktrails mark '{"balance": 900}'      # advance + spend
+blocktrails mark '{"balance": 800}' --dry  # dry run (no broadcast)
 
-# Fund and spend (on-chain)
-blocktrails fund --broadcast           # base → GENESIS
-blocktrails spend --broadcast          # GENESIS → State 1
-blocktrails spend '{"balance": 800}' -b  # advance to new state
+# Or use separate commands
+blocktrails genesis '{"balance": 1000}'  # off-chain only
+blocktrails advance '{"balance": 900}'   # off-chain only
+blocktrails fund --broadcast             # base → GENESIS
+blocktrails spend --broadcast            # GENESIS → State 1
 
 # Exit trail - send funds to external address
 blocktrails exodus tb1p... --broadcast
@@ -142,8 +144,9 @@ blocktrails show --online
 | Command | Description |
 |---------|-------------|
 | `init` | Create new trail (generates key or uses `git config nostr.privkey`) |
-| `genesis <state>` | Create genesis state (off-chain) |
-| `advance <state>` | Advance to new state (off-chain) |
+| `mark <state>` | **Unified command** — add state and broadcast (use `--dry` for dry run) |
+| `genesis <state>` | Create genesis state (off-chain only) |
+| `advance <state>` | Advance to new state (off-chain only) |
 | `fund` | Move funds from base address to GENESIS (on-chain) |
 | `spend [state]` | Advance on-chain (to next state, or new state if provided) |
 | `exodus <address>` | Send funds to external address (exit trail) |
@@ -152,6 +155,10 @@ blocktrails show --online
 | `export` | Export trail with witness programs |
 | `verify [file]` | Verify a trail |
 | `cache [clear\|path]` | Show cache stats, clear cache, or show path |
+
+### Supported Networks
+
+Use `--network` or `-n` to specify: `btc`, `tbtc3`, `tbtc4` (default), `ltc`
 
 ## Transaction API
 
@@ -223,7 +230,7 @@ Or try the [live interactive demo](https://blocktrails.org/demo/) on testnet4.
 ## Run Tests
 
 ```bash
-npm test  # 102 tests
+npm test  # 107 tests
 ```
 
 ## Specification

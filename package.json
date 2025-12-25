@@ -1,6 +1,6 @@
 {
   "name": "blocktrails",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Nostr-native output-key commitment chaining on Bitcoin",
   "main": "src/index.js",
   "bin": {
