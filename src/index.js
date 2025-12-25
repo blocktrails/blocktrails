@@ -412,6 +412,13 @@ function encodeBech32m(hrp, witnessProgram) {
 // Re-export utilities
 export { bytesToHex, hexToBytes };
 
+// Nostr-style aliases (preferred)
+export const derivePrivkey = derivePrivateKey;
+export const derivePubkey = derivePublicKey;
+export const deriveChainedPrivkey = deriveChainedPrivateKey;
+export const deriveChainedPubkey = deriveChainedPublicKey;
+export const adjustPrivkeyForSigning = adjustPrivateKeyForSigning;
+
 // Re-export transaction module
 export {
   signSchnorr,

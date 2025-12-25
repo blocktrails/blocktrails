@@ -96,16 +96,16 @@ const result = verify(pubkeyBase, states, witnessPrograms);
 
 ```javascript
 import {
-  scalar,            // sha256(state) mod n — the core tweak function
-  derivePrivateKey,  // d + t (derive privkey for state)
-  derivePublicKey,   // P + t·G (derive pubkey for state)
-  p2trXonly,         // Compress to 32-byte x-only
-  adjustPrivateKeyForSigning, // BIP-340 parity adjustment
+  scalar,              // sha256(state) mod n — the core tweak function
+  derivePrivkey,       // d + t (derive privkey for state)
+  derivePubkey,        // P + t·G (derive pubkey for state)
+  p2trXonly,           // Compress to 32-byte x-only
+  adjustPrivkeyForSigning, // BIP-340 parity adjustment
 } from 'blocktrails';
 
 // Example: derive address from state
 const t = scalar(JSON.stringify({ counter: 42 }));
-const P = derivePublicKey(pubkeyBase, state);
+const P = derivePubkey(pubkeyBase, state);
 const witnessProgram = p2trXonly(P);
 ```
 
