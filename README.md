@@ -26,7 +26,7 @@ npm install blocktrails
 import { Blocktrail } from 'blocktrails';
 
 // Create a trail with your Nostr-compatible private key
-const trail = new Blocktrail(privateKey);
+const trail = new Blocktrail(privkey);
 
 // Genesis — commit first state to a P2TR address
 const genesis = trail.genesis(JSON.stringify({ balance: 1000 }));
@@ -63,7 +63,7 @@ Each state transition is a Bitcoin transaction. No special opcodes, just key twe
 ```javascript
 import { Blocktrail } from 'blocktrails';
 
-const trail = new Blocktrail(privateKey);
+const trail = new Blocktrail(privkey);
 
 trail.genesis('state 0');           // Initialize
 trail.advance('state 1');           // Transition
@@ -80,11 +80,11 @@ trail.export();                     // { pubkeyBase, states, witnessPrograms }
 import { genesis, transition, verify } from 'blocktrails';
 
 // Create genesis
-const g = genesis(privateKeyBytes, 'initial state');
+const g = genesis(privkey, 'initial state');
 // → { witnessProgram, p2trAddress, derivedPrivkey, derivedPubkey }
 
 // Create transition
-const t = transition(privateKeyBytes, 'state 0', 'state 1');
+const t = transition(privkey, 'state 0', 'state 1');
 // → { signingPrivkey, prevWitnessProgram, newWitnessProgram, newP2trAddress }
 
 // Verify chain
@@ -97,8 +97,8 @@ const result = verify(pubkeyBase, states, witnessPrograms);
 ```javascript
 import {
   scalar,            // sha256(state) mod n — the core tweak function
-  derivePrivateKey,  // d_base + t
-  derivePublicKey,   // P_base + t·G
+  derivePrivateKey,  // d + t (derive privkey for state)
+  derivePublicKey,   // P + t·G (derive pubkey for state)
   p2trXonly,         // Compress to 32-byte x-only
   adjustPrivateKeyForSigning, // BIP-340 parity adjustment
 } from 'blocktrails';
