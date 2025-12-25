@@ -5,8 +5,12 @@
 import { getCachedTx, cacheTx } from './cache.js';
 
 const ENDPOINTS = {
-  mainnet: 'https://blockstream.info/api',
-  tbtc4: 'https://mempool.space/testnet4/api'
+  // Bitcoin
+  btc: 'https://mempool.guide/api',
+  tbtc3: 'https://mempool.guide/testnet/api',
+  tbtc4: 'https://mempool.guide/testnet4/api',
+  // Litecoin
+  ltc: 'https://litecoinspace.org/api'
 };
 
 /**
@@ -33,7 +37,7 @@ async function fetchApi(url, options = {}) {
  * Get UTXOs for a Bitcoin address
  *
  * @param {string} address - Bitcoin address (bc1p... or tb1p...)
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {Promise<Array>} Array of UTXOs
  */
 export async function getUtxos(address, network = 'tbtc4') {
@@ -58,7 +62,7 @@ export async function getUtxos(address, network = 'tbtc4') {
  * Get transaction details (with caching)
  *
  * @param {string} txid - Transaction ID
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @param {Object} options - Options
  * @param {boolean} options.skipCache - Skip cache lookup
  * @param {boolean} options.noCache - Don't write to cache
@@ -108,7 +112,7 @@ export async function getTransaction(txid, network = 'tbtc4', options = {}) {
  * Get transaction history for an address
  *
  * @param {string} address - Bitcoin address
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {Promise<Array>} Array of transactions
  */
 export async function getAddressTxs(address, network = 'tbtc4') {
@@ -125,7 +129,7 @@ export async function getAddressTxs(address, network = 'tbtc4') {
  * Broadcast a raw transaction
  *
  * @param {string} txHex - Raw transaction hex
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {Promise<string>} Transaction ID
  */
 export async function broadcast(txHex, network = 'tbtc4') {
@@ -146,7 +150,7 @@ export async function broadcast(txHex, network = 'tbtc4') {
 /**
  * Get recommended fee rates
  *
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {Promise<Object>} Fee rates { fastest, halfHour, hour, economy, minimum }
  */
 export async function getFeeRates(network = 'tbtc4') {
@@ -171,7 +175,7 @@ export async function getFeeRates(network = 'tbtc4') {
  * Wait for transaction confirmation
  *
  * @param {string} txid - Transaction ID
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @param {number} timeout - Timeout in milliseconds
  * @param {number} interval - Polling interval in milliseconds
  * @returns {Promise<Object>} Transaction details when confirmed

@@ -13,7 +13,7 @@ import { homedir } from 'os';
 
 /**
  * Get cache directory for a network
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {string} Cache directory path
  */
 export function getCacheDir(network = 'tbtc4') {
@@ -23,7 +23,7 @@ export function getCacheDir(network = 'tbtc4') {
 
 /**
  * Ensure cache directory exists
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  */
 function ensureCacheDir(network) {
   const dir = getCacheDir(network);
@@ -35,7 +35,7 @@ function ensureCacheDir(network) {
 /**
  * Get cached transaction
  * @param {string} txid - Transaction ID
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {Object|null} Cached transaction data or null if not cached
  */
 export function getCachedTx(txid, network = 'tbtc4') {
@@ -58,7 +58,7 @@ export function getCachedTx(txid, network = 'tbtc4') {
  * Cache a transaction
  * @param {string} txid - Transaction ID
  * @param {Object} txData - Transaction data from API
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  */
 export function cacheTx(txid, txData, network = 'tbtc4') {
   ensureCacheDir(network);
@@ -98,7 +98,7 @@ export function cacheTx(txid, txData, network = 'tbtc4') {
 /**
  * Check if transaction is cached and confirmed
  * @param {string} txid - Transaction ID
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {boolean} True if cached and confirmed
  */
 export function isCachedAndConfirmed(txid, network = 'tbtc4') {
@@ -108,7 +108,7 @@ export function isCachedAndConfirmed(txid, network = 'tbtc4') {
 
 /**
  * Clear cache for a network
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @param {boolean} removeDir - Also remove the directory
  */
 export function clearCache(network = 'tbtc4', removeDir = false) {
@@ -128,7 +128,7 @@ export function clearCache(network = 'tbtc4', removeDir = false) {
 
 /**
  * Get cache stats
- * @param {string} network - 'mainnet' or 'tbtc4'
+ * @param {string} network - 'btc', 'tbtc3', 'tbtc4', or 'ltc'
  * @returns {Object} Cache statistics
  */
 export function getCacheStats(network = 'tbtc4') {

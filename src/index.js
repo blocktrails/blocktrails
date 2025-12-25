@@ -134,7 +134,7 @@ export function genesis(privateKeyBase, state) {
     derivedPrivateKey: bytesToHex(d),
     derivedPublicKey: bytesToHex(P),
     witnessProgram: bytesToHex(output),
-    p2trAddress: encodeBech32m('bc', output) // mainnet
+    p2trAddress: encodeBech32m('bc', output) // btc
   };
 }
 

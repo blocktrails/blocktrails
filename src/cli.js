@@ -176,7 +176,13 @@ function encodeBech32m(hrp, witnessProgram) {
 }
 
 function getHrp(network) {
-  return network === 'mainnet' ? 'bc' : 'tb'; // tbtc4 uses 'tb' prefix
+  const hrpMap = {
+    btc: 'bc',
+    tbtc3: 'tb',
+    tbtc4: 'tb',
+    ltc: 'ltc'
+  };
+  return hrpMap[network] || 'tb';
 }
 
 /**
@@ -1458,7 +1464,7 @@ Commands:
 Options:
   -k, --key <hex>         Private key (hex)
   -f, --file <path>       Trail file (default: .blocktrail.json)
-  -n, --network <net>     Network: mainnet or tbtc4 (default: tbtc4)
+  -n, --network <net>     Network: btc, tbtc3, tbtc4, ltc (default: tbtc4)
   -o, --output <path>     Output file for export
   --force                 Overwrite existing files
   -h, --help              Show this help
