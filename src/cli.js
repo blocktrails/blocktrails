@@ -911,6 +911,225 @@ async function cmdSpend(newState, options) {
   }
 }
 
+async function cmdMark(stateArg, options) {
+  // Get private key
+  const privateKey = getPrivateKey(options);
+  if (!privateKey) {
+    console.error('No private key found. Use --key or set git config nostr.privkey');
+    process.exit(1);
+  }
+
+  // Load or create trail
+  let trail = loadTrail(options);
+  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
+  const publicKeyHex = bytesToHex(publicKey);
+
+  if (!trail) {
+    // Auto-init if no trail exists
+    trail = {
+      version: 1,
+      publicKeyBase: publicKeyHex,
+      states: [],
+      network: options.network || 'tbtc4'
+    };
+    console.log('Initialized new trail');
+  } else {
+    // Verify private key matches
+    if (publicKeyHex !== trail.publicKeyBase) {
+      console.error('Private key does not match trail public key');
+      process.exit(1);
+    }
+  }
+
+  const network = trail.network || 'tbtc4';
+  const hrp = getHrp(network);
+  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+
+  // Parse state if provided
+  const newState = stateArg ? parseState(stateArg) : null;
+
+  if (!newState) {
+    console.error('Usage: blocktrails mark <state> [--dry]');
+    process.exit(1);
+  }
+
+  // Compute base address
+  const baseWP = p2trXonly(publicKeyBase);
+  const baseAddress = encodeBech32m(hrp, baseWP);
+
+  // Build list of all current state addresses
+  const stateAddresses = [];
+  for (let i = 0; i < trail.states.length; i++) {
+    const statesUpTo = trail.states.slice(0, i + 1);
+    const P = deriveChainedPublicKey(publicKeyBase, statesUpTo);
+    const wp = p2trXonly(P);
+    const address = encodeBech32m(hrp, wp);
+    stateAddresses.push({ index: i, states: statesUpTo, wp, address });
+  }
+
+  // Compute new state address (after adding newState)
+  const newStates = [...trail.states, newState];
+  const newP = deriveChainedPublicKey(publicKeyBase, newStates);
+  const newWP = p2trXonly(newP);
+  const newAddress = encodeBech32m(hrp, newWP);
+  const newIndex = trail.states.length;
+
+  console.log(`New state [${newIndex}]: ${newState.length > 50 ? newState.slice(0, 47) + '...' : newState}`);
+  console.log(`Address: ${newAddress}`);
+
+  // Scan for UTXOs
+  console.log('');
+  console.log('Scanning for funds...');
+
+  let sourceType = null; // 'base' or 'state'
+  let sourceIndex = -1;
+  let sourceWP = null;
+  let utxos = [];
+
+  // Check base address first
+  try {
+    const baseUtxos = await getUtxos(baseAddress, network);
+    if (baseUtxos.length > 0) {
+      sourceType = 'base';
+      sourceWP = baseWP;
+      utxos = baseUtxos.map(u => ({ ...u, witnessProgram: baseWP }));
+      console.log(`Found ${utxos.length} UTXO(s) at BASE: ${utxos.reduce((s, u) => s + u.amount, 0)} sats`);
+    }
+  } catch (e) {
+    console.error(`Error checking base: ${e.message}`);
+  }
+
+  // If not at base, check state addresses
+  if (!sourceType) {
+    for (let i = 0; i < stateAddresses.length; i++) {
+      const { address, index, wp } = stateAddresses[i];
+      try {
+        const found = await getUtxos(address, network);
+        if (found.length > 0) {
+          sourceType = 'state';
+          sourceIndex = index;
+          sourceWP = wp;
+          utxos = found.map(u => ({ ...u, witnessProgram: wp }));
+          const label = index === 0 ? 'GENESIS' : index === trail.states.length - 1 ? 'HEAD' : `State ${index}`;
+          console.log(`Found ${utxos.length} UTXO(s) at [${index}] ${label}: ${utxos.reduce((s, u) => s + u.amount, 0)} sats`);
+          break;
+        }
+      } catch (e) {
+        console.error(`Error checking state ${i}: ${e.message}`);
+      }
+    }
+  }
+
+  if (!sourceType) {
+    console.error('');
+    console.error('No funds found at base or any state address.');
+    console.error(`Send funds to base address: ${baseAddress}`);
+    process.exit(1);
+  }
+
+  // Check if funds are at HEAD (required for adding new state)
+  if (sourceType === 'state' && sourceIndex !== trail.states.length - 1) {
+    console.error('');
+    console.error(`Funds are at state ${sourceIndex}, not HEAD (${trail.states.length - 1}).`);
+    console.error('Cannot add new state until funds catch up to HEAD.');
+    console.error('Use "blocktrails spend" to advance funds to HEAD first.');
+    process.exit(1);
+  }
+
+  // Calculate fee
+  let feeRate = options.feeRate;
+  if (!feeRate) {
+    try {
+      const rates = await getFeeRates(network);
+      feeRate = rates.halfHour;
+      console.log(`Fee rate: ${feeRate} sat/vB`);
+    } catch {
+      feeRate = 1;
+      console.log(`Fee rate: ${feeRate} sat/vB (default)`);
+    }
+  }
+
+  const vsize = estimateVsize(utxos.length, 1);
+  const fee = Math.ceil(vsize * feeRate);
+  const totalIn = utxos.reduce((sum, u) => sum + u.amount, 0);
+  const outputAmount = totalIn - fee;
+
+  if (outputAmount <= 546) {
+    console.error(`Insufficient funds: ${totalIn} sats, fee ${fee} sats`);
+    process.exit(1);
+  }
+
+  // Determine signing key
+  let signingKey;
+  if (sourceType === 'base') {
+    signingKey = hexToBytes(privateKey);
+  } else {
+    const sourceStates = trail.states.slice(0, sourceIndex + 1);
+    signingKey = deriveChainedPrivateKey(hexToBytes(privateKey), sourceStates);
+  }
+
+  // Build transaction
+  const tx = buildTransaction({
+    inputs: utxos.map(u => ({
+      txid: u.txid,
+      vout: u.vout,
+      amount: u.amount,
+      witnessProgram: u.witnessProgram
+    })),
+    outputs: [{
+      witnessProgram: newWP,
+      value: outputAmount
+    }]
+  });
+
+  // Sign transaction
+  const signingKeys = utxos.map(() => signingKey);
+  const signedTx = signTransaction(tx, signingKeys, utxos);
+
+  // Serialize
+  const txBytes = serializeTransaction(signedTx);
+  const txHex = bytesToHex(txBytes);
+  const txid = computeTxid(signedTx);
+
+  const sourceLabel = sourceType === 'base' ? 'BASE' :
+    (sourceIndex === 0 ? 'GENESIS' : sourceIndex === trail.states.length - 1 ? 'HEAD' : `State ${sourceIndex}`);
+
+  console.log('');
+  console.log(`Transaction: ${sourceLabel} → [${newIndex}] NEW`);
+  console.log(`  TXID: ${txid}`);
+  console.log(`  Fee: ${fee} sats (${feeRate} sat/vB)`);
+  console.log(`  Output: ${outputAmount} sats`);
+
+  if (options.showRaw) {
+    console.log('');
+    console.log('Raw transaction:');
+    console.log(txHex);
+  }
+
+  // Dry run or broadcast
+  if (options.dry) {
+    console.log('');
+    console.log('Dry run. Use without --dry to broadcast.');
+  } else {
+    console.log('');
+    console.log('Broadcasting...');
+    try {
+      const broadcastTxid = await broadcastTx(txHex, network);
+      console.log(`✓ Broadcast successful!`);
+      console.log(`  TXID: ${broadcastTxid}`);
+
+      // Update trail file
+      trail.states.push(newState);
+      const path = getTrailPath(options);
+      writeFileSync(path, JSON.stringify(trail, null, 2) + '\n');
+      console.log(`  Trail updated: ${path}`);
+    } catch (e) {
+      console.error(`✗ Broadcast failed: ${e.message}`);
+      process.exit(1);
+    }
+  }
+}
+
 async function cmdExodus(destAddress, options) {
   // Validate destination address
   let destWP;
@@ -1205,6 +1424,8 @@ function parseArgs(args) {
       options.online = true;
     } else if (arg === '--relay') {
       options.relay = args[++i];
+    } else if (arg === '--dry') {
+      options.dry = true;
     } else if (!arg.startsWith('-')) {
       positional.push(arg);
     }
@@ -1221,9 +1442,10 @@ Usage:
   blocktrails <command> [options]
 
 Commands:
+  mark <state>            Add state and broadcast (unified command)
   init                    Create new trail (uses git config nostr.privkey if available)
-  genesis <state>         Create genesis state (off-chain)
-  advance <state>         Advance to new state (off-chain)
+  genesis <state>         Create genesis state (off-chain only)
+  advance <state>         Advance to new state (off-chain only)
   fund                    Move funds from base address to GENESIS (on-chain)
   spend [state]           Advance on-chain (to next state, or new state if provided)
   exodus <address>        Send funds to external address (exit trail)
@@ -1242,7 +1464,12 @@ Options:
   -h, --help              Show this help
   -v, --version           Show version
 
-Spend Options:
+Mark Options:
+  --dry                   Dry run (don't broadcast, just show what would happen)
+  --fee-rate <sat/vB>     Fee rate (default: auto-fetch)
+  -r, --raw               Show raw transaction hex
+
+Legacy Spend Options:
   -u, --utxo <txid:vout:amount>   UTXO to spend (repeatable, or auto-fetch)
   --fee-rate <sat/vB>             Fee rate (default: auto-fetch)
   -b, --broadcast                 Broadcast transaction
@@ -1257,12 +1484,19 @@ Key Sources (in priority order):
   3. Generated (for init only)
 
 Examples:
+  # Unified workflow with mark (recommended)
+  blocktrails mark '{"counter": 0}'         # add state + broadcast
+  blocktrails mark '{"counter": 1}'         # add next state + broadcast
+  blocktrails mark '{"counter": 2}' --dry   # dry run (no broadcast)
+
+  # Legacy workflow
   blocktrails init
-  blocktrails genesis '{"counter": 0}'
-  blocktrails advance '{"counter": 1}'
+  blocktrails genesis '{"counter": 0}'      # off-chain
+  blocktrails advance '{"counter": 1}'      # off-chain
   blocktrails fund --broadcast              # base → GENESIS
-  blocktrails spend --broadcast             # GENESIS → State 1
   blocktrails spend '{"counter": 2}' -b     # HEAD → new state
+
+  # Other
   blocktrails exodus tb1p... --broadcast    # exit trail to external address
   blocktrails show --online
   blocktrails export -o trail.json
@@ -1327,6 +1561,14 @@ async function main() {
 
       case 'verify':
         cmdVerify(positional[1], options);
+        break;
+
+      case 'mark':
+        if (!positional[1]) {
+          console.error('Usage: blocktrails mark <state> [--dry]');
+          process.exit(1);
+        }
+        await cmdMark(positional[1], options);
         break;
 
       case 'fund':
