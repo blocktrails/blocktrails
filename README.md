@@ -71,7 +71,7 @@ trail.advance('state 2');           // Transition
 
 trail.currentState();               // 'state 2'
 trail.currentWitnessProgram();      // Uint8Array (32 bytes)
-trail.export();                     // { publicKeyBase, states, witnessPrograms }
+trail.export();                     // { pubkeyBase, states, witnessPrograms }
 ```
 
 ### Standalone Functions
@@ -88,7 +88,7 @@ const t = transition(privateKeyBytes, 'state 0', 'state 1');
 // → { signingPrivateKey, prevWitnessProgram, newWitnessProgram, newP2trAddress }
 
 // Verify chain
-const result = verify(publicKeyBase, states, witnessPrograms);
+const result = verify(pubkeyBase, states, witnessPrograms);
 // → { valid: true } or { valid: false, error: '...' }
 ```
 
@@ -105,7 +105,7 @@ import {
 
 // Example: derive address from state
 const t = scalar(JSON.stringify({ counter: 42 }));
-const P = derivePublicKey(publicKeyBase, state);
+const P = derivePublicKey(pubkeyBase, state);
 const witnessProgram = p2trXonly(P);
 ```
 

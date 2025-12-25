@@ -112,7 +112,7 @@ describe('genesis', () => {
   test('creates valid genesis', () => {
     const result = genesis(TEST_PRIVKEY, 'initial state');
     assert.ok(result.privateKeyBase, 'Should have privateKeyBase');
-    assert.ok(result.publicKeyBase, 'Should have publicKeyBase');
+    assert.ok(result.pubkeyBase, 'Should have pubkeyBase');
     assert.ok(result.derivedPrivateKey, 'Should have derivedPrivateKey');
     assert.ok(result.derivedPublicKey, 'Should have derivedPublicKey');
     assert.ok(result.witnessProgram, 'Should have witnessProgram');
@@ -235,7 +235,7 @@ describe('Blocktrail class', () => {
     const exported = trail.export();
 
     // Verify with a new instance
-    const pubBase = hexToBytes(exported.publicKeyBase);
+    const pubBase = hexToBytes(exported.pubkeyBase);
     const witnessPrograms = exported.witnessPrograms.map(hexToBytes);
 
     const result = verify(pubBase, exported.states, witnessPrograms);

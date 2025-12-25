@@ -82,7 +82,7 @@ describe('CLI', () => {
       assert.strictEqual(data.version, 1);
       assert.strictEqual(data.network, 'tbtc4');
       assert.strictEqual(data.states.length, 0);
-      assert.ok(data.publicKeyBase, 'Should have public key');
+      assert.ok(data.pubkeyBase, 'Should have public key');
     });
 
     test('creates trail file with provided key', () => {
@@ -92,7 +92,7 @@ describe('CLI', () => {
 
       const data = JSON.parse(readFileSync(trailFile, 'utf8'));
       // Public key for private key 1 is the generator point
-      assert.ok(data.publicKeyBase.startsWith('02'), 'Should be compressed public key');
+      assert.ok(data.pubkeyBase.startsWith('02'), 'Should be compressed public key');
     });
 
     test('respects --network mainnet option', () => {

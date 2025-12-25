@@ -115,7 +115,7 @@ function saveTrail(trail, options) {
   const path = getTrailPath(options);
   const data = {
     version: 1,
-    publicKeyBase: bytesToHex(trail.publicKeyBase),
+    pubkeyBase: bytesToHex(trail.pubkeyBase),
     states: trail.states,
     network: options.network || 'tbtc4'
   };
@@ -300,7 +300,7 @@ function cmdInit(options) {
   // Create minimal trail file (no states yet)
   const data = {
     version: 1,
-    publicKeyBase: publicKeyHex,
+    pubkeyBase: publicKeyHex,
     states: [],
     network: options.network || 'tbtc4'
   };
@@ -366,10 +366,10 @@ function cmdAdvance(stateArg, options) {
   // Reconstruct trail
   const trail = new Blocktrail(privateKey);
   trail.states = existingTrail.states;
-  trail.publicKeyBase = secp.getPublicKey(hexToBytes(privateKey), true);
+  trail.pubkeyBase = secp.getPublicKey(hexToBytes(privateKey), true);
 
   // Verify public key matches
-  if (bytesToHex(trail.publicKeyBase) !== existingTrail.publicKeyBase) {
+  if (bytesToHex(trail.pubkeyBase) !== existingTrail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
@@ -397,16 +397,16 @@ async function cmdShow(options) {
 
   const network = trail.network || 'tbtc4';
   const hrp = getHrp(network);
-  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+  const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
   console.log(`Trail: ${getTrailPath(options)}`);
   console.log(`Network: ${network}`);
-  console.log(`Public key: ${trail.publicKeyBase}`);
+  console.log(`Public key: ${trail.pubkeyBase}`);
   console.log(`States: ${trail.states.length}`);
   console.log('');
 
   // Show base key address
-  const baseWP = p2trXonly(publicKeyBase);
+  const baseWP = p2trXonly(pubkeyBase);
   const baseAddress = encodeBech32m(hrp, baseWP);
   console.log(`Base address: ${baseAddress}`);
 
@@ -437,7 +437,7 @@ async function cmdShow(options) {
 
   // Collect addresses first
   const addresses = [];
-  let P = secp.ProjectivePoint.fromHex(publicKeyBase);
+  let P = secp.ProjectivePoint.fromHex(pubkeyBase);
 
   for (let i = 0; i < trail.states.length; i++) {
     const state = trail.states[i];
@@ -514,11 +514,11 @@ function cmdExport(options) {
     process.exit(1);
   }
 
-  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+  const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
   // Generate witness programs
   const witnessPrograms = [];
-  let P = secp.ProjectivePoint.fromHex(publicKeyBase);
+  let P = secp.ProjectivePoint.fromHex(pubkeyBase);
 
   for (const state of trail.states) {
     const t = scalar(state);
@@ -529,7 +529,7 @@ function cmdExport(options) {
 
   const exportData = {
     version: 1,
-    publicKeyBase: trail.publicKeyBase,
+    pubkeyBase: trail.pubkeyBase,
     network: trail.network || 'tbtc4',
     states: trail.states,
     witnessPrograms
@@ -568,9 +568,9 @@ function cmdVerify(file, options) {
   // If no witness programs, generate them for self-consistency check
   if (!data.witnessPrograms) {
     console.log('No witness programs in file, generating...');
-    const publicKeyBase = hexToBytes(data.publicKeyBase);
+    const pubkeyBase = hexToBytes(data.pubkeyBase);
     data.witnessPrograms = [];
-    let P = secp.ProjectivePoint.fromHex(publicKeyBase);
+    let P = secp.ProjectivePoint.fromHex(pubkeyBase);
 
     for (const state of data.states) {
       const t = scalar(state);
@@ -580,16 +580,16 @@ function cmdVerify(file, options) {
     }
   }
 
-  const publicKeyBase = hexToBytes(data.publicKeyBase);
+  const pubkeyBase = hexToBytes(data.pubkeyBase);
   const witnessPrograms = data.witnessPrograms.map(wp =>
     typeof wp === 'string' ? hexToBytes(wp) : wp
   );
 
-  const result = verify(publicKeyBase, data.states, witnessPrograms);
+  const result = verify(pubkeyBase, data.states, witnessPrograms);
 
   if (result.valid) {
     console.log(`✓ Trail verified: ${data.states.length} states`);
-    console.log(`  Public key: ${data.publicKeyBase.slice(0, 16)}...`);
+    console.log(`  Public key: ${data.pubkeyBase.slice(0, 16)}...`);
     console.log(`  Network: ${data.network || 'unknown'}`);
   } else {
     console.error(`✗ Verification failed: ${result.error}`);
@@ -614,21 +614,21 @@ async function cmdFund(options) {
 
   // Verify private key matches trail
   const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
 
   const network = trail.network || 'tbtc4';
   const hrp = getHrp(network);
-  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+  const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
   // Base address (untweaked)
-  const baseWP = p2trXonly(publicKeyBase);
+  const baseWP = p2trXonly(pubkeyBase);
   const baseAddress = encodeBech32m(hrp, baseWP);
 
   // GENESIS address (first state)
-  const genesisP = deriveChainedPublicKey(publicKeyBase, [trail.states[0]]);
+  const genesisP = deriveChainedPublicKey(pubkeyBase, [trail.states[0]]);
   const genesisWP = p2trXonly(genesisP);
   const genesisAddress = encodeBech32m(hrp, genesisWP);
 
@@ -746,20 +746,20 @@ async function cmdSpend(newState, options) {
 
   // Verify private key matches trail
   const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
 
   const network = trail.network || 'tbtc4';
   const hrp = getHrp(network);
-  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+  const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
   // Build list of all state addresses
   const stateAddresses = [];
   for (let i = 0; i < trail.states.length; i++) {
     const statesUpTo = trail.states.slice(0, i + 1);
-    const P = deriveChainedPublicKey(publicKeyBase, statesUpTo);
+    const P = deriveChainedPublicKey(pubkeyBase, statesUpTo);
     const wp = p2trXonly(P);
     const address = encodeBech32m(hrp, wp);
     stateAddresses.push({ index: i, states: statesUpTo, wp, address });
@@ -818,7 +818,7 @@ async function cmdSpend(newState, options) {
     destStates = trail.states.slice(0, destIndex + 1);
   }
 
-  const destP = deriveChainedPublicKey(publicKeyBase, destStates);
+  const destP = deriveChainedPublicKey(pubkeyBase, destStates);
   const destWP = p2trXonly(destP);
   const destAddress = encodeBech32m(hrp, destWP);
   const destLabel = addNewState ? 'NEW' : (destIndex === 0 ? 'GENESIS' : destIndex === trail.states.length - 1 ? 'HEAD' : `State ${destIndex}`);
@@ -934,14 +934,14 @@ async function cmdMark(stateArg, options) {
     // Auto-init if no trail exists
     trail = {
       version: 1,
-      publicKeyBase: publicKeyHex,
+      pubkeyBase: publicKeyHex,
       states: [],
       network: options.network || 'tbtc4'
     };
     console.log('Initialized new trail');
   } else {
     // Verify private key matches
-    if (publicKeyHex !== trail.publicKeyBase) {
+    if (publicKeyHex !== trail.pubkeyBase) {
       console.error('Private key does not match trail public key');
       process.exit(1);
     }
@@ -949,7 +949,7 @@ async function cmdMark(stateArg, options) {
 
   const network = trail.network || 'tbtc4';
   const hrp = getHrp(network);
-  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+  const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
   // Parse state if provided
   const newState = stateArg ? parseState(stateArg) : null;
@@ -960,14 +960,14 @@ async function cmdMark(stateArg, options) {
   }
 
   // Compute base address
-  const baseWP = p2trXonly(publicKeyBase);
+  const baseWP = p2trXonly(pubkeyBase);
   const baseAddress = encodeBech32m(hrp, baseWP);
 
   // Build list of all current state addresses
   const stateAddresses = [];
   for (let i = 0; i < trail.states.length; i++) {
     const statesUpTo = trail.states.slice(0, i + 1);
-    const P = deriveChainedPublicKey(publicKeyBase, statesUpTo);
+    const P = deriveChainedPublicKey(pubkeyBase, statesUpTo);
     const wp = p2trXonly(P);
     const address = encodeBech32m(hrp, wp);
     stateAddresses.push({ index: i, states: statesUpTo, wp, address });
@@ -975,7 +975,7 @@ async function cmdMark(stateArg, options) {
 
   // Compute new state address (after adding newState)
   const newStates = [...trail.states, newState];
-  const newP = deriveChainedPublicKey(publicKeyBase, newStates);
+  const newP = deriveChainedPublicKey(pubkeyBase, newStates);
   const newWP = p2trXonly(newP);
   const newAddress = encodeBech32m(hrp, newWP);
   const newIndex = trail.states.length;
@@ -1163,20 +1163,20 @@ async function cmdExodus(destAddress, options) {
 
   // Verify private key matches trail
   const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
 
   const network = trail.network || 'tbtc4';
   const hrp = getHrp(network);
-  const publicKeyBase = hexToBytes(trail.publicKeyBase);
+  const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
   // Build list of all state addresses
   const stateAddresses = [];
   for (let i = 0; i < trail.states.length; i++) {
     const statesUpTo = trail.states.slice(0, i + 1);
-    const P = deriveChainedPublicKey(publicKeyBase, statesUpTo);
+    const P = deriveChainedPublicKey(pubkeyBase, statesUpTo);
     const wp = p2trXonly(P);
     const address = encodeBech32m(hrp, wp);
     stateAddresses.push({ index: i, states: statesUpTo, wp, address });
@@ -1344,7 +1344,7 @@ async function cmdPublish(options) {
 
   // Verify private key matches trail
   const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.publicKeyBase) {
+  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }

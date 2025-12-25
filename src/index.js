@@ -58,16 +58,16 @@ export function derivePrivateKey(privateKeyBase, state) {
 
 /**
  * Derive public key for a state: P = P_base + t·G
- * @param {Uint8Array} publicKeyBase - Base public key (33 bytes compressed)
+ * @param {Uint8Array} pubkeyBase - Base public key (33 bytes compressed)
  * @param {Uint8Array|string} state - State to commit to
  * @returns {Uint8Array} Derived public key (33 bytes compressed)
  * @throws {Error} If scalar(state) is zero
  */
-export function derivePublicKey(publicKeyBase, state) {
+export function derivePublicKey(pubkeyBase, state) {
   const t = scalar(state); // throws if t == 0
 
   // P_base + t·G
-  const PBase = secp.ProjectivePoint.fromHex(publicKeyBase);
+  const PBase = secp.ProjectivePoint.fromHex(pubkeyBase);
   const tG = secp.ProjectivePoint.BASE.multiply(t);
   const P = PBase.add(tG);
 
@@ -122,14 +122,14 @@ export function adjustPrivateKeyForSigning(privateKey, publicKey) {
  * @returns {Object} Genesis info
  */
 export function genesis(privateKeyBase, state) {
-  const publicKeyBase = secp.getPublicKey(privateKeyBase, true);
+  const pubkeyBase = secp.getPublicKey(privateKeyBase, true);
   const d = derivePrivateKey(privateKeyBase, state);
-  const P = derivePublicKey(publicKeyBase, state);
+  const P = derivePublicKey(pubkeyBase, state);
   const output = p2trXonly(P);
 
   return {
     privateKeyBase: bytesToHex(privateKeyBase),
-    publicKeyBase: bytesToHex(publicKeyBase),
+    pubkeyBase: bytesToHex(pubkeyBase),
     state: typeof state === 'string' ? state : bytesToHex(state),
     derivedPrivateKey: bytesToHex(d),
     derivedPublicKey: bytesToHex(P),
@@ -140,12 +140,12 @@ export function genesis(privateKeyBase, state) {
 
 /**
  * Derive chained public key from all states (P = P_base + t₀·G + t₁·G + ...)
- * @param {Uint8Array} publicKeyBase - Base public key (33 bytes compressed)
+ * @param {Uint8Array} pubkeyBase - Base public key (33 bytes compressed)
  * @param {Array<Uint8Array|string>} states - All states in order
  * @returns {Uint8Array} Derived public key (33 bytes compressed)
  */
-export function deriveChainedPublicKey(publicKeyBase, states) {
-  let P = secp.ProjectivePoint.fromHex(publicKeyBase);
+export function deriveChainedPublicKey(pubkeyBase, states) {
+  let P = secp.ProjectivePoint.fromHex(pubkeyBase);
 
   for (const state of states) {
     const t = scalar(state);
@@ -181,16 +181,16 @@ export function deriveChainedPrivateKey(privateKeyBase, states) {
  * @returns {Object} Transition info
  */
 export function transition(privateKeyBase, prevStates, newState) {
-  const publicKeyBase = secp.getPublicKey(privateKeyBase, true);
+  const pubkeyBase = secp.getPublicKey(privateKeyBase, true);
 
   // Previous output (what we're spending) - chained from all previous states
-  const prevP = deriveChainedPublicKey(publicKeyBase, prevStates);
+  const prevP = deriveChainedPublicKey(pubkeyBase, prevStates);
   const prevD = deriveChainedPrivateKey(privateKeyBase, prevStates);
   const signingKey = adjustPrivateKeyForSigning(prevD, prevP);
 
   // New output - chain includes all states
   const allStates = [...prevStates, newState];
-  const newP = deriveChainedPublicKey(publicKeyBase, allStates);
+  const newP = deriveChainedPublicKey(pubkeyBase, allStates);
   const newOutput = p2trXonly(newP);
 
   return {
@@ -205,18 +205,18 @@ export function transition(privateKeyBase, prevStates, newState) {
 
 /**
  * Verify a state chain (chained model)
- * @param {Uint8Array} publicKeyBase - Base public key (33 bytes)
+ * @param {Uint8Array} pubkeyBase - Base public key (33 bytes)
  * @param {Array<Uint8Array|string>} states - Array of states
  * @param {Array<Uint8Array>} witnessPrograms - Array of witness programs from chain
  * @returns {Object} Verification result
  */
-export function verify(publicKeyBase, states, witnessPrograms) {
+export function verify(pubkeyBase, states, witnessPrograms) {
   if (states.length !== witnessPrograms.length) {
     return { valid: false, error: 'State count does not match witness program count' };
   }
 
   // Chain the verification: P = P_base, then P = P + t·G for each state
-  let P = secp.ProjectivePoint.fromHex(publicKeyBase);
+  let P = secp.ProjectivePoint.fromHex(pubkeyBase);
 
   for (let i = 0; i < states.length; i++) {
     const state = states[i];
@@ -256,7 +256,7 @@ export class Blocktrail {
     this.privateKeyBase = typeof privateKeyBase === 'string'
       ? hexToBytes(privateKeyBase)
       : privateKeyBase;
-    this.publicKeyBase = secp.getPublicKey(this.privateKeyBase, true);
+    this.pubkeyBase = secp.getPublicKey(this.privateKeyBase, true);
     this.states = [];
   }
 
@@ -292,7 +292,7 @@ export class Blocktrail {
    * Get current witness program (chained)
    */
   currentWitnessProgram() {
-    const P = deriveChainedPublicKey(this.publicKeyBase, this.states);
+    const P = deriveChainedPublicKey(this.pubkeyBase, this.states);
     return p2trXonly(P);
   }
 
@@ -300,7 +300,7 @@ export class Blocktrail {
    * Verify this trail matches given witness programs
    */
   verify(witnessPrograms) {
-    return verify(this.publicKeyBase, this.states, witnessPrograms);
+    return verify(this.pubkeyBase, this.states, witnessPrograms);
   }
 
   /**
@@ -308,7 +308,7 @@ export class Blocktrail {
    */
   export() {
     const witnessPrograms = [];
-    let P = secp.ProjectivePoint.fromHex(this.publicKeyBase);
+    let P = secp.ProjectivePoint.fromHex(this.pubkeyBase);
 
     for (const state of this.states) {
       const t = scalar(state);
@@ -318,7 +318,7 @@ export class Blocktrail {
     }
 
     return {
-      publicKeyBase: bytesToHex(this.publicKeyBase),
+      pubkeyBase: bytesToHex(this.pubkeyBase),
       states: this.states,
       witnessPrograms
     };
