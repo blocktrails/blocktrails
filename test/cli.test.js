@@ -153,10 +153,10 @@ describe('CLI', () => {
       assert.ok(stderr.includes('Usage:'), 'Should show usage');
     });
 
-    test('uses mainnet address prefix for mainnet', () => {
-      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY} --network mainnet`);
-      const { stdout } = runCli(`genesis "state" -f ${trailFile} --key ${TEST_PRIVKEY} --network mainnet`);
-      assert.ok(stdout.includes('Address: bc1p'), 'Should show mainnet address');
+    test('uses btc address prefix for btc network', () => {
+      runCli(`init -f ${trailFile} --key ${TEST_PRIVKEY} --network btc`);
+      const { stdout } = runCli(`genesis "state" -f ${trailFile} --key ${TEST_PRIVKEY} --network btc`);
+      assert.ok(stdout.includes('Address: bc1p'), 'Should show btc address');
     });
   });
 
