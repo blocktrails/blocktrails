@@ -294,13 +294,13 @@ function cmdInit(options) {
     keySource = 'generated';
   }
 
-  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  const publicKeyHex = bytesToHex(publicKey);
+  const pubkey = secp.getPublicKey(hexToBytes(privateKey), true);
+  const pubkeyHex = bytesToHex(pubkey);
 
   // Create minimal trail file (no states yet)
   const data = {
     version: 1,
-    pubkeyBase: publicKeyHex,
+    pubkeyBase: pubkeyHex,
     states: [],
     network: options.network || 'tbtc4'
   };
@@ -309,7 +309,7 @@ function cmdInit(options) {
 
   console.log(`Initialized new trail: ${existingPath}`);
   console.log(`Key source: ${keySource}`);
-  console.log(`Public key: ${publicKeyHex}`);
+  console.log(`Public key: ${pubkeyHex}`);
 
   if (keySource === 'generated') {
     console.log('');
@@ -613,8 +613,8 @@ async function cmdFund(options) {
   }
 
   // Verify private key matches trail
-  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
+  const pubkey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(pubkey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
@@ -745,8 +745,8 @@ async function cmdSpend(newState, options) {
   }
 
   // Verify private key matches trail
-  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
+  const pubkey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(pubkey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
@@ -927,21 +927,21 @@ async function cmdMark(stateArg, options) {
 
   // Load or create trail
   let trail = loadTrail(options);
-  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  const publicKeyHex = bytesToHex(publicKey);
+  const pubkey = secp.getPublicKey(hexToBytes(privateKey), true);
+  const pubkeyHex = bytesToHex(pubkey);
 
   if (!trail) {
     // Auto-init if no trail exists
     trail = {
       version: 1,
-      pubkeyBase: publicKeyHex,
+      pubkeyBase: pubkeyHex,
       states: [],
       network: options.network || 'tbtc4'
     };
     console.log('Initialized new trail');
   } else {
     // Verify private key matches
-    if (publicKeyHex !== trail.pubkeyBase) {
+    if (pubkeyHex !== trail.pubkeyBase) {
       console.error('Private key does not match trail public key');
       process.exit(1);
     }
@@ -1162,8 +1162,8 @@ async function cmdExodus(destAddress, options) {
   }
 
   // Verify private key matches trail
-  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
+  const pubkey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(pubkey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
@@ -1343,14 +1343,14 @@ async function cmdPublish(options) {
   }
 
   // Verify private key matches trail
-  const publicKey = secp.getPublicKey(hexToBytes(privateKey), true);
-  if (bytesToHex(publicKey) !== trail.pubkeyBase) {
+  const pubkey = secp.getPublicKey(hexToBytes(privateKey), true);
+  if (bytesToHex(pubkey) !== trail.pubkeyBase) {
     console.error('Private key does not match trail public key');
     process.exit(1);
   }
 
   // Get x-only pubkey (32 bytes) for Nostr
-  const xOnlyPubkey = bytesToHex(publicKey.slice(1)); // Remove prefix byte
+  const xOnlyPubkey = bytesToHex(pubkey.slice(1)); // Remove prefix byte
 
   const relay = options.relay || DEFAULT_RELAY;
 

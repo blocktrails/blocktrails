@@ -44,13 +44,13 @@ export const computeTweak = scalar;
 
 /**
  * Derive private key for a state: d = d_base + t
- * @param {Uint8Array} privateKeyBase - Base private key (32 bytes)
+ * @param {Uint8Array} privkey - Base private key (32 bytes)
  * @param {Uint8Array|string} state - State to commit to
  * @returns {Uint8Array} Derived private key (32 bytes)
  * @throws {Error} If scalar(state) is zero
  */
-export function derivePrivateKey(privateKeyBase, state) {
-  const dBase = bytesToBigInt(privateKeyBase);
+export function derivePrivateKey(privkey, state) {
+  const dBase = bytesToBigInt(privkey);
   const t = scalar(state); // throws if t == 0
   const d = (dBase + t) % N;
   return bigIntToBytes(d, 32);
@@ -77,11 +77,11 @@ export function derivePublicKey(pubkeyBase, state) {
 /**
  * Convert public key to P2TR x-only format (32 bytes)
  * If y is odd, negate the point
- * @param {Uint8Array} publicKey - Public key (33 bytes compressed)
+ * @param {Uint8Array} pubkey - Public key (33 bytes compressed)
  * @returns {Uint8Array} x-only public key (32 bytes)
  */
-export function p2trXonly(publicKey) {
-  const P = secp.ProjectivePoint.fromHex(publicKey);
+export function p2trXonly(pubkey) {
+  const P = secp.ProjectivePoint.fromHex(pubkey);
   const { x, y } = P.toAffine();
 
   // If y is odd, we'd negate, but x stays the same
@@ -91,22 +91,22 @@ export function p2trXonly(publicKey) {
 
 /**
  * Check if public key has even y (for signing)
- * @param {Uint8Array} publicKey - Public key (33 bytes compressed)
+ * @param {Uint8Array} pubkey - Public key (33 bytes compressed)
  * @returns {boolean} True if y is even
  */
-export function hasEvenY(publicKey) {
+export function hasEvenY(pubkey) {
   // First byte: 02 = even, 03 = odd
-  return publicKey[0] === 0x02;
+  return pubkey[0] === 0x02;
 }
 
 /**
  * Negate private key if needed for BIP-340 signing
  * @param {Uint8Array} privateKey - Private key (32 bytes)
- * @param {Uint8Array} publicKey - Corresponding public key (33 bytes)
+ * @param {Uint8Array} pubkey - Corresponding public key (33 bytes)
  * @returns {Uint8Array} Possibly negated private key
  */
-export function adjustPrivateKeyForSigning(privateKey, publicKey) {
-  if (hasEvenY(publicKey)) {
+export function adjustPrivateKeyForSigning(privateKey, pubkey) {
+  if (hasEvenY(pubkey)) {
     return privateKey;
   }
   // Negate: d' = n - d
@@ -117,22 +117,22 @@ export function adjustPrivateKeyForSigning(privateKey, publicKey) {
 
 /**
  * Create a genesis commitment
- * @param {Uint8Array} privateKeyBase - Base private key (32 bytes)
+ * @param {Uint8Array} privkey - Base private key (32 bytes)
  * @param {Uint8Array|string} state - Initial state
  * @returns {Object} Genesis info
  */
-export function genesis(privateKeyBase, state) {
-  const pubkeyBase = secp.getPublicKey(privateKeyBase, true);
-  const d = derivePrivateKey(privateKeyBase, state);
+export function genesis(privkey, state) {
+  const pubkeyBase = secp.getPublicKey(privkey, true);
+  const d = derivePrivateKey(privkey, state);
   const P = derivePublicKey(pubkeyBase, state);
   const output = p2trXonly(P);
 
   return {
-    privateKeyBase: bytesToHex(privateKeyBase),
+    privkey: bytesToHex(privkey),
     pubkeyBase: bytesToHex(pubkeyBase),
     state: typeof state === 'string' ? state : bytesToHex(state),
-    derivedPrivateKey: bytesToHex(d),
-    derivedPublicKey: bytesToHex(P),
+    derivedPrivkey: bytesToHex(d),
+    derivedPubkey: bytesToHex(P),
     witnessProgram: bytesToHex(output),
     p2trAddress: encodeBech32m('bc', output) // btc
   };
@@ -158,12 +158,12 @@ export function deriveChainedPublicKey(pubkeyBase, states) {
 
 /**
  * Derive chained private key from all states (d = d_base + t₀ + t₁ + ...)
- * @param {Uint8Array} privateKeyBase - Base private key (32 bytes)
+ * @param {Uint8Array} privkey - Base private key (32 bytes)
  * @param {Array<Uint8Array|string>} states - All states in order
  * @returns {Uint8Array} Derived private key (32 bytes)
  */
-export function deriveChainedPrivateKey(privateKeyBase, states) {
-  let d = bytesToBigInt(privateKeyBase);
+export function deriveChainedPrivateKey(privkey, states) {
+  let d = bytesToBigInt(privkey);
 
   for (const state of states) {
     const t = scalar(state);
@@ -175,17 +175,17 @@ export function deriveChainedPrivateKey(privateKeyBase, states) {
 
 /**
  * Create a state transition (chained model)
- * @param {Uint8Array} privateKeyBase - Base private key (32 bytes)
+ * @param {Uint8Array} privkey - Base private key (32 bytes)
  * @param {Array<Uint8Array|string>} prevStates - All previous states including genesis
  * @param {Uint8Array|string} newState - New state to transition to
  * @returns {Object} Transition info
  */
-export function transition(privateKeyBase, prevStates, newState) {
-  const pubkeyBase = secp.getPublicKey(privateKeyBase, true);
+export function transition(privkey, prevStates, newState) {
+  const pubkeyBase = secp.getPublicKey(privkey, true);
 
   // Previous output (what we're spending) - chained from all previous states
   const prevP = deriveChainedPublicKey(pubkeyBase, prevStates);
-  const prevD = deriveChainedPrivateKey(privateKeyBase, prevStates);
+  const prevD = deriveChainedPrivateKey(privkey, prevStates);
   const signingKey = adjustPrivateKeyForSigning(prevD, prevP);
 
   // New output - chain includes all states
@@ -196,7 +196,7 @@ export function transition(privateKeyBase, prevStates, newState) {
   return {
     prevStates: prevStates.map(s => typeof s === 'string' ? s : bytesToHex(s)),
     newState: typeof newState === 'string' ? newState : bytesToHex(newState),
-    signingPrivateKey: bytesToHex(signingKey),
+    signingPrivkey: bytesToHex(signingKey),
     prevWitnessProgram: bytesToHex(p2trXonly(prevP)),
     newWitnessProgram: bytesToHex(newOutput),
     newP2trAddress: encodeBech32m('bc', newOutput)
@@ -252,11 +252,11 @@ export function verify(pubkeyBase, states, witnessPrograms) {
  * Create a Blocktrail instance for easier state management (chained model)
  */
 export class Blocktrail {
-  constructor(privateKeyBase) {
-    this.privateKeyBase = typeof privateKeyBase === 'string'
-      ? hexToBytes(privateKeyBase)
-      : privateKeyBase;
-    this.pubkeyBase = secp.getPublicKey(this.privateKeyBase, true);
+  constructor(privkey) {
+    this.privkey = typeof privkey === 'string'
+      ? hexToBytes(privkey)
+      : privkey;
+    this.pubkeyBase = secp.getPublicKey(this.privkey, true);
     this.states = [];
   }
 
@@ -265,7 +265,7 @@ export class Blocktrail {
    */
   genesis(state) {
     this.states = [state];
-    return genesis(this.privateKeyBase, state);
+    return genesis(this.privkey, state);
   }
 
   /**
@@ -276,7 +276,7 @@ export class Blocktrail {
       throw new Error('Must call genesis() first');
     }
     // Pass all previous states for chained derivation
-    const result = transition(this.privateKeyBase, this.states, newState);
+    const result = transition(this.privkey, this.states, newState);
     this.states.push(newState);
     return result;
   }

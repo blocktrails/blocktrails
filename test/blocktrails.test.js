@@ -111,10 +111,10 @@ describe('p2trXonly', () => {
 describe('genesis', () => {
   test('creates valid genesis', () => {
     const result = genesis(TEST_PRIVKEY, 'initial state');
-    assert.ok(result.privateKeyBase, 'Should have privateKeyBase');
+    assert.ok(result.privkey, 'Should have privkey');
     assert.ok(result.pubkeyBase, 'Should have pubkeyBase');
-    assert.ok(result.derivedPrivateKey, 'Should have derivedPrivateKey');
-    assert.ok(result.derivedPublicKey, 'Should have derivedPublicKey');
+    assert.ok(result.derivedPrivkey, 'Should have derivedPrivkey');
+    assert.ok(result.derivedPubkey, 'Should have derivedPubkey');
     assert.ok(result.witnessProgram, 'Should have witnessProgram');
     assert.ok(result.p2trAddress, 'Should have p2trAddress');
   });
@@ -136,7 +136,7 @@ describe('transition', () => {
     const result = transition(TEST_PRIVKEY, ['state 0'], 'state 1');
     assert.ok(result.prevStates, 'Should have prevStates');
     assert.ok(result.newState, 'Should have newState');
-    assert.ok(result.signingPrivateKey, 'Should have signingPrivateKey');
+    assert.ok(result.signingPrivkey, 'Should have signingPrivkey');
     assert.ok(result.prevWitnessProgram, 'Should have prevWitnessProgram');
     assert.ok(result.newWitnessProgram, 'Should have newWitnessProgram');
   });
@@ -283,7 +283,7 @@ describe('determinism', () => {
     const first = results[0];
     for (const r of results) {
       assert.strictEqual(r.witnessProgram, first.witnessProgram);
-      assert.strictEqual(r.derivedPublicKey, first.derivedPublicKey);
+      assert.strictEqual(r.derivedPubkey, first.derivedPubkey);
     }
   });
 });

@@ -81,11 +81,11 @@ import { genesis, transition, verify } from 'blocktrails';
 
 // Create genesis
 const g = genesis(privateKeyBytes, 'initial state');
-// → { witnessProgram, p2trAddress, derivedPrivateKey, derivedPublicKey }
+// → { witnessProgram, p2trAddress, derivedPrivkey, derivedPubkey }
 
 // Create transition
 const t = transition(privateKeyBytes, 'state 0', 'state 1');
-// → { signingPrivateKey, prevWitnessProgram, newWitnessProgram, newP2trAddress }
+// → { signingPrivkey, prevWitnessProgram, newWitnessProgram, newP2trAddress }
 
 // Verify chain
 const result = verify(pubkeyBase, states, witnessPrograms);

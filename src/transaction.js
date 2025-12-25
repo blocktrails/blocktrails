@@ -202,10 +202,10 @@ export function signSchnorr(messageHash, privateKey, auxRand = new Uint8Array(32
 /**
  * Verify BIP-340 Schnorr signature
  */
-export function verifySchnorr(signature, messageHash, publicKey) {
+export function verifySchnorr(signature, messageHash, pubkey) {
   if (signature.length !== 64) return false;
   if (messageHash.length !== 32) return false;
-  if (publicKey.length !== 32) return false;
+  if (pubkey.length !== 32) return false;
 
   const rx = bytesToBigInt(signature.slice(0, 32));
   const s = bytesToBigInt(signature.slice(32));
@@ -213,12 +213,12 @@ export function verifySchnorr(signature, messageHash, publicKey) {
   if (rx >= secp.CURVE.p || s >= N) return false;
 
   // e = tagged_hash("BIP0340/challenge", R.x || P.x || m) mod n
-  const eHash = taggedHash('BIP0340/challenge', signature.slice(0, 32), publicKey, messageHash);
+  const eHash = taggedHash('BIP0340/challenge', signature.slice(0, 32), pubkey, messageHash);
   const e = bytesToBigInt(eHash) % N;
 
   // R' = s·G - e·P
   try {
-    const P = secp.ProjectivePoint.fromHex(concatBytes(new Uint8Array([0x02]), publicKey));
+    const P = secp.ProjectivePoint.fromHex(concatBytes(new Uint8Array([0x02]), pubkey));
     const sG = secp.ProjectivePoint.BASE.multiply(s);
     const eP = P.multiply(e);
     const R = sG.add(eP.negate()).toAffine();
