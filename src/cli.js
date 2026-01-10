@@ -435,17 +435,19 @@ async function cmdShow(options) {
     return;
   }
 
-  // Collect addresses first
+  // Collect addresses first (using BIP-341 chained derivation)
   const addresses = [];
   let P = secp.ProjectivePoint.fromHex(pubkeyBase);
+  let currentPubkey = pubkeyBase;
 
   for (let i = 0; i < trail.states.length; i++) {
     const state = trail.states[i];
-    const t = scalar(state);
+    const t = scalar(currentPubkey, state); // BIP-341 tweak
     const tG = secp.ProjectivePoint.BASE.multiply(t);
     P = P.add(tG);
+    currentPubkey = P.toRawBytes(true);
 
-    const wp = p2trXonly(P.toRawBytes(true));
+    const wp = p2trXonly(currentPubkey);
     const address = encodeBech32m(hrp, wp);
     addresses.push({ state, address, index: i });
   }
@@ -516,15 +518,17 @@ function cmdExport(options) {
 
   const pubkeyBase = hexToBytes(trail.pubkeyBase);
 
-  // Generate witness programs
+  // Generate witness programs (BIP-341 chained derivation)
   const witnessPrograms = [];
   let P = secp.ProjectivePoint.fromHex(pubkeyBase);
+  let currentPubkey = pubkeyBase;
 
   for (const state of trail.states) {
-    const t = scalar(state);
+    const t = scalar(currentPubkey, state); // BIP-341 tweak
     const tG = secp.ProjectivePoint.BASE.multiply(t);
     P = P.add(tG);
-    witnessPrograms.push(bytesToHex(p2trXonly(P.toRawBytes(true))));
+    currentPubkey = P.toRawBytes(true);
+    witnessPrograms.push(bytesToHex(p2trXonly(currentPubkey)));
   }
 
   const exportData = {
@@ -565,18 +569,20 @@ function cmdVerify(file, options) {
     process.exit(1);
   }
 
-  // If no witness programs, generate them for self-consistency check
+  // If no witness programs, generate them for self-consistency check (BIP-341)
   if (!data.witnessPrograms) {
     console.log('No witness programs in file, generating...');
     const pubkeyBase = hexToBytes(data.pubkeyBase);
     data.witnessPrograms = [];
     let P = secp.ProjectivePoint.fromHex(pubkeyBase);
+    let currentPubkey = pubkeyBase;
 
     for (const state of data.states) {
-      const t = scalar(state);
+      const t = scalar(currentPubkey, state); // BIP-341 tweak
       const tG = secp.ProjectivePoint.BASE.multiply(t);
       P = P.add(tG);
-      data.witnessPrograms.push(bytesToHex(p2trXonly(P.toRawBytes(true))));
+      currentPubkey = P.toRawBytes(true);
+      data.witnessPrograms.push(bytesToHex(p2trXonly(currentPubkey)));
     }
   }
 

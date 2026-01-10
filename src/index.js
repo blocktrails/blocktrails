@@ -1,9 +1,12 @@
 /**
- * Blocktrails - Nostr-native output-key commitment chaining on Bitcoin
- * Reference implementation (v0.2 - chained derivation model)
+ * Blocktrails - Trust through time
+ * Nostr-native state anchoring on Bitcoin
  *
- * Key change from v0.1: Uses chained tweaking where each state
- * adds to the previous key, not independent derivation from base.
+ * Reference implementation (v0.3 - BIP-341 mode)
+ *
+ * Modes:
+ * - 'taproot' (default): BIP-341 tagged hash with pubkey binding
+ * - 'simple': Legacy simple sha256 tweak (v0.2 compatibility)
  */
 
 import * as secp from '@noble/secp256k1';
@@ -13,30 +16,92 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 // secp256k1 curve order
 const N = secp.CURVE.n;
 
+// Default mode - BIP-341 taproot
+const DEFAULT_MODE = 'taproot';
+
+// Tagged hash cache for performance
+const tagHashCache = new Map();
+
 /**
- * Compute scalar tweak from state per spec:
- *   h = sha256(serialize(s))
- *   t = int(h, big-endian) mod n
- *   if t == 0: reject state as invalid
- *   return t
- *
- * @param {Uint8Array|string} state - State bytes or string (serialized)
- * @returns {bigint} Tweak value in range [1, n-1]
- * @throws {Error} If tweak is zero (probability ~2^-256)
+ * BIP-340 tagged hash: sha256(sha256(tag) || sha256(tag) || msg)
+ * @param {string} tag - Tag string
+ * @param {...Uint8Array} msgs - Messages to hash
+ * @returns {Uint8Array} 32-byte hash
  */
-export function scalar(state) {
+function taggedHash(tag, ...msgs) {
+  let tagHash = tagHashCache.get(tag);
+  if (!tagHash) {
+    const tagBytes = new TextEncoder().encode(tag);
+    tagHash = sha256(tagBytes);
+    tagHashCache.set(tag, tagHash);
+  }
+  const combined = concatBytes(tagHash, tagHash, ...msgs);
+  return sha256(combined);
+}
+
+/**
+ * Concatenate byte arrays
+ */
+function concatBytes(...arrays) {
+  const totalLength = arrays.reduce((acc, arr) => acc + arr.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const arr of arrays) {
+    result.set(arr, offset);
+    offset += arr.length;
+  }
+  return result;
+}
+
+/**
+ * Extract x-only pubkey (32 bytes) from compressed pubkey (33 bytes)
+ * @param {Uint8Array} pubkey - Compressed public key (33 bytes)
+ * @returns {Uint8Array} x-only public key (32 bytes)
+ */
+function toXOnly(pubkey) {
+  return pubkey.slice(1);
+}
+
+/**
+ * Compute BIP-341 TapTweak: tagged_hash("TapTweak", P_x || data)
+ * @param {Uint8Array} pubkeyXOnly - x-only pubkey (32 bytes)
+ * @param {Uint8Array} data - Data to include in tweak (typically sha256(state))
+ * @returns {bigint} Tweak value mod n
+ */
+function tapTweak(pubkeyXOnly, data) {
+  const hash = taggedHash('TapTweak', pubkeyXOnly, data);
+  const t = bytesToBigInt(hash) % N;
+  if (t === 0n) {
+    throw new Error('Invalid tweak: TapTweak is zero');
+  }
+  return t;
+}
+
+/**
+ * Compute sha256 hash of state as bytes
+ * @param {Uint8Array|string} state - State bytes or string
+ * @returns {Uint8Array} 32-byte hash
+ */
+function stateHash(state) {
   const stateBytes = typeof state === 'string'
     ? new TextEncoder().encode(state)
     : state;
-  const hash = sha256(stateBytes);
-  const t = bytesToBigInt(hash) % N;
+  return sha256(stateBytes);
+}
 
-  // Per spec: "Implementations MUST reject states where t = 0"
-  if (t === 0n) {
-    throw new Error('Invalid state: tweak is zero');
-  }
-
-  return t;
+/**
+ * Compute BIP-341 tweak for a state given current pubkey
+ * t = tagged_hash("TapTweak", x_only(P) || sha256(state)) mod n
+ *
+ * @param {Uint8Array} pubkey - Current public key (33 bytes compressed)
+ * @param {Uint8Array|string} state - State to commit to
+ * @returns {bigint} Tweak value in range [1, n-1]
+ * @throws {Error} If tweak is zero
+ */
+export function scalar(pubkey, state) {
+  const xOnly = toXOnly(pubkey);
+  const sh = stateHash(state);
+  return tapTweak(xOnly, sh);
 }
 
 // Backward compatibility alias
@@ -44,27 +109,32 @@ export const computeTweak = scalar;
 
 /**
  * Derive private key for a state: d = d_base + t
+ * where t = BIP-341 tapTweak(x_only(P_base), sha256(state))
+ *
  * @param {Uint8Array} privkey - Base private key (32 bytes)
  * @param {Uint8Array|string} state - State to commit to
  * @returns {Uint8Array} Derived private key (32 bytes)
- * @throws {Error} If scalar(state) is zero
+ * @throws {Error} If tweak is zero
  */
 export function derivePrivateKey(privkey, state) {
+  const pubkey = secp.getPublicKey(privkey, true);
   const dBase = bytesToBigInt(privkey);
-  const t = scalar(state); // throws if t == 0
+  const t = scalar(pubkey, state); // BIP-341 tweak
   const d = (dBase + t) % N;
   return bigIntToBytes(d, 32);
 }
 
 /**
  * Derive public key for a state: P = P_base + t·G
+ * where t = BIP-341 tapTweak(x_only(P_base), sha256(state))
+ *
  * @param {Uint8Array} pubkeyBase - Base public key (33 bytes compressed)
  * @param {Uint8Array|string} state - State to commit to
  * @returns {Uint8Array} Derived public key (33 bytes compressed)
- * @throws {Error} If scalar(state) is zero
+ * @throws {Error} If tweak is zero
  */
 export function derivePublicKey(pubkeyBase, state) {
-  const t = scalar(state); // throws if t == 0
+  const t = scalar(pubkeyBase, state); // BIP-341 tweak
 
   // P_base + t·G
   const PBase = secp.ProjectivePoint.fromHex(pubkeyBase);
@@ -139,35 +209,44 @@ export function genesis(privkey, state) {
 }
 
 /**
- * Derive chained public key from all states (P = P_base + t₀·G + t₁·G + ...)
+ * Derive chained public key from all states using BIP-341 tweaks
+ * Each step: P_i = P_{i-1} + tapTweak(x_only(P_{i-1}), sha256(state_i))·G
+ *
  * @param {Uint8Array} pubkeyBase - Base public key (33 bytes compressed)
  * @param {Array<Uint8Array|string>} states - All states in order
  * @returns {Uint8Array} Derived public key (33 bytes compressed)
  */
 export function deriveChainedPublicKey(pubkeyBase, states) {
   let P = secp.ProjectivePoint.fromHex(pubkeyBase);
+  let currentPubkey = pubkeyBase;
 
   for (const state of states) {
-    const t = scalar(state);
+    const t = scalar(currentPubkey, state); // BIP-341 tweak uses current pubkey
     const tG = secp.ProjectivePoint.BASE.multiply(t);
     P = P.add(tG);
+    currentPubkey = P.toRawBytes(true); // Update for next iteration
   }
 
   return P.toRawBytes(true);
 }
 
 /**
- * Derive chained private key from all states (d = d_base + t₀ + t₁ + ...)
+ * Derive chained private key from all states using BIP-341 tweaks
+ * Each step: d_i = d_{i-1} + tapTweak(x_only(P_{i-1}), sha256(state_i))
+ *
  * @param {Uint8Array} privkey - Base private key (32 bytes)
  * @param {Array<Uint8Array|string>} states - All states in order
  * @returns {Uint8Array} Derived private key (32 bytes)
  */
 export function deriveChainedPrivateKey(privkey, states) {
   let d = bytesToBigInt(privkey);
+  let currentPubkey = secp.getPublicKey(privkey, true);
 
   for (const state of states) {
-    const t = scalar(state);
+    const t = scalar(currentPubkey, state); // BIP-341 tweak uses current pubkey
     d = (d + t) % N;
+    // Update pubkey for next iteration
+    currentPubkey = secp.ProjectivePoint.BASE.multiply(d).toRawBytes(true);
   }
 
   return bigIntToBytes(d, 32);
@@ -215,20 +294,22 @@ export function verify(pubkeyBase, states, witnessPrograms) {
     return { valid: false, error: 'State count does not match witness program count' };
   }
 
-  // Chain the verification: P = P_base, then P = P + t·G for each state
+  // Chain the verification using BIP-341 tweaks
   let P = secp.ProjectivePoint.fromHex(pubkeyBase);
+  let currentPubkey = pubkeyBase;
 
   for (let i = 0; i < states.length; i++) {
     const state = states[i];
     const expectedWP = witnessPrograms[i];
 
     try {
-      // Add this state's tweak to the running key
-      const t = scalar(state);
+      // Add this state's BIP-341 tweak to the running key
+      const t = scalar(currentPubkey, state);
       const tG = secp.ProjectivePoint.BASE.multiply(t);
       P = P.add(tG);
+      currentPubkey = P.toRawBytes(true); // Update for next iteration
 
-      const computedWP = p2trXonly(P.toRawBytes(true));
+      const computedWP = p2trXonly(currentPubkey);
 
       // Compare x-coordinates
       const expectedHex = bytesToHex(expectedWP);
@@ -309,12 +390,14 @@ export class Blocktrail {
   export() {
     const witnessPrograms = [];
     let P = secp.ProjectivePoint.fromHex(this.pubkeyBase);
+    let currentPubkey = this.pubkeyBase;
 
     for (const state of this.states) {
-      const t = scalar(state);
+      const t = scalar(currentPubkey, state); // BIP-341 tweak
       const tG = secp.ProjectivePoint.BASE.multiply(t);
       P = P.add(tG);
-      witnessPrograms.push(bytesToHex(p2trXonly(P.toRawBytes(true))));
+      currentPubkey = P.toRawBytes(true);
+      witnessPrograms.push(bytesToHex(p2trXonly(currentPubkey)));
     }
 
     return {

@@ -24,33 +24,43 @@ import {
 // Test private key (DO NOT USE IN PRODUCTION)
 const TEST_PRIVKEY = hexToBytes('0000000000000000000000000000000000000000000000000000000000000001');
 
-describe('scalar', () => {
+// Test pubkey for scalar tests (generator point G)
+const TEST_PUBKEY = hexToBytes('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798');
+
+describe('scalar (BIP-341 tapTweak)', () => {
   test('produces non-zero tweak for typical state', () => {
-    const t = scalar('hello world');
+    const t = scalar(TEST_PUBKEY, 'hello world');
     assert.ok(t > 0n, 'Tweak should be positive');
   });
 
   test('produces consistent results', () => {
-    const t1 = scalar('test state');
-    const t2 = scalar('test state');
+    const t1 = scalar(TEST_PUBKEY, 'test state');
+    const t2 = scalar(TEST_PUBKEY, 'test state');
     assert.strictEqual(t1, t2, 'Same input should produce same tweak');
   });
 
   test('different states produce different tweaks', () => {
-    const t1 = scalar('state 1');
-    const t2 = scalar('state 2');
+    const t1 = scalar(TEST_PUBKEY, 'state 1');
+    const t2 = scalar(TEST_PUBKEY, 'state 2');
     assert.notStrictEqual(t1, t2, 'Different inputs should produce different tweaks');
+  });
+
+  test('different pubkeys produce different tweaks for same state', () => {
+    const pubkey2 = hexToBytes('02c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5');
+    const t1 = scalar(TEST_PUBKEY, 'state');
+    const t2 = scalar(pubkey2, 'state');
+    assert.notStrictEqual(t1, t2, 'Different pubkeys should produce different tweaks');
   });
 
   test('handles Uint8Array input', () => {
     const bytes = new Uint8Array([1, 2, 3, 4]);
-    const t = scalar(bytes);
+    const t = scalar(TEST_PUBKEY, bytes);
     assert.ok(t > 0n, 'Should handle bytes');
   });
 
   test('computeTweak is alias for scalar (backward compat)', () => {
-    const t1 = scalar('test');
-    const t2 = computeTweak('test');
+    const t1 = scalar(TEST_PUBKEY, 'test');
+    const t2 = computeTweak(TEST_PUBKEY, 'test');
     assert.strictEqual(t1, t2, 'computeTweak should be alias for scalar');
   });
 

@@ -1,8 +1,13 @@
 {
   "name": "blocktrails",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "Trust through time — Nostr-native state anchoring on Bitcoin",
   "main": "src/index.js",
+  "browser": "src/browser.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./browser": "./src/browser.js"
+  },
   "bin": {
     "blocktrails": "src/cli.js"
   },
