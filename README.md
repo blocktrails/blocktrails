@@ -9,8 +9,11 @@ Reference implementation of [Blocktrails](https://blocktrails.org) — Nostr-nat
 Blocktrails lets you anchor off-chain state to Bitcoin using Taproot. Each state produces a unique P2TR address. Spending from that address proves a state transition. The chain of spends *is* the state history — immutably ordered by Bitcoin.
 
 ```
-base_key + sha256(state) = derived_key → P2TR address
+t_i = tagged_hash("TapTweak", x_only(P_{i-1}) || sha256(state_i)) mod n
+P_i = P_{i-1} + t_i·G  → P2TR address
 ```
+
+Each state tweaks the previous key with a [BIP-341](https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki) TapTweak, starting from the base key `P_0`, so every address commits to the whole history. Versions before 0.0.12 used the older rule `P_base + sha256(state)·G`, and gave different addresses (#20).
 
 Use cases: token ledgers, audit trails, Nostr identity anchoring, verifiable logs.
 
@@ -84,7 +87,7 @@ const g = genesis(privkey, 'initial state');
 // → { witnessProgram, p2trAddress, derivedPrivkey, derivedPubkey }
 
 // Create transition
-const t = transition(privkey, 'state 0', 'state 1');
+const t = transition(privkey, ['state 0'], 'state 1'); // all previous states, then the new one
 // → { signingPrivkey, prevWitnessProgram, newWitnessProgram, newP2trAddress }
 
 // Verify chain
@@ -96,16 +99,17 @@ const result = verify(pubkeyBase, states, witnessPrograms);
 
 ```javascript
 import {
-  scalar,              // sha256(state) mod n — the core tweak function
+  scalar,              // tagged_hash("TapTweak", x_only(P) || sha256(state)) mod n — the core tweak function
   derivePrivkey,       // d + t (derive privkey for state)
   derivePubkey,        // P + t·G (derive pubkey for state)
   p2trXonly,           // Compress to 32-byte x-only
   adjustPrivkeyForSigning, // BIP-340 parity adjustment
 } from 'blocktrails';
 
-// Example: derive address from state
-const t = scalar(JSON.stringify({ counter: 42 }));
-const P = derivePubkey(pubkeyBase, state);
+// Example: derive the address for one state
+const state = JSON.stringify({ counter: 42 });
+const t = scalar(pubkeyBase, state);          // the tweak, from the key and the state
+const P = derivePubkey(pubkeyBase, state);    // pubkeyBase + t·G
 const witnessProgram = p2trXonly(P);
 ```
 
